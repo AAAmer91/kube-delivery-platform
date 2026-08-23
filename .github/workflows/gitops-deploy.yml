@@ -103,7 +103,7 @@ jobs:
           ENVIRONMENT_NAME: ${{ inputs.environment }}
           VALUES_FILE: ${{ inputs.environment == 'production' && 'deploy/helm/kube-delivery-platform/values-prod.yaml' || 'deploy/helm/kube-delivery-platform/values-staging.yaml' }}
         run: |
-          branch="gitops/promote-${ENVIRONMENT_NAME}-${GITHUB_RUN_ID}"
+          branch="gitops/promote-${ENVIRONMENT_NAME}-${GITHUB_RUN_ID}-attempt-${GITHUB_RUN_ATTEMPT}"
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git switch -c "${branch}"

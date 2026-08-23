@@ -44,6 +44,8 @@ Three failed measurements cause the rollout to abort. Argo Rollouts then returns
 
 Application images are referenced by immutable digest in environment values. The promotion workflow updates those values through a pull request, which keeps the proposed artifact change reviewable and auditable.
 
+Promotion branches include both the GitHub run ID and run-attempt number. A rerun therefore opens a new branch instead of rewriting the branch created by an earlier attempt. After changing the workflow definition itself, start a new manual run because GitHub reruns use the workflow from the original run's commit.
+
 ## Operator commands
 
 Set the namespace and release-specific rollout name before using these commands:

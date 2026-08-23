@@ -124,3 +124,13 @@ def test_workflows_publish_human_readable_coordinates_without_weakening_scorecar
     assert "GITHUB_STEP_SUMMARY" in build
     assert "GitOps promotion input" in build
     assert build.index("Upload SBOM evidence") < build.index("Publish immutable image coordinates")
+
+
+def test_gitops_promotion_branch_is_unique_for_each_rerun_attempt() -> None:
+    workflow = (REPOSITORY_ROOT / ".github/workflows/gitops-deploy.yml").read_text(encoding="utf-8")
+
+    assert (
+        'branch="gitops/promote-${ENVIRONMENT_NAME}-${GITHUB_RUN_ID}-attempt-${GITHUB_RUN_ATTEMPT}"'
+        in workflow
+    )
+    assert 'branch="gitops/promote-${ENVIRONMENT_NAME}-${GITHUB_RUN_ID}"' not in workflow
