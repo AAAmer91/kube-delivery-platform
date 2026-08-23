@@ -1,6 +1,20 @@
 name: "GitOps Progressive Delivery & Promotion"
 
 on:
+  workflow_call:
+    inputs:
+      environment:
+        description: "Target deployment environment"
+        required: true
+        type: string
+      shipment_api_digest:
+        description: "shipment-api digest (sha256:...)"
+        required: true
+        type: string
+      tracking_worker_digest:
+        description: "tracking-worker digest (sha256:...)"
+        required: true
+        type: string
   workflow_dispatch:
     inputs:
       environment:
@@ -21,6 +35,7 @@ on:
         type: string
 
 permissions:
+  actions: write
   attestations: read
   contents: write
   deployments: write
@@ -114,18 +129,32 @@ jobs:
             exit 0
           fi
           echo "changed=true" >> "${GITHUB_OUTPUT}"
+          echo "branch=${branch}" >> "${GITHUB_OUTPUT}"
           git commit -m "chore(gitops): promote ${ENVIRONMENT_NAME} image digests"
           git push "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" "HEAD:${branch}"
-          gh pr create \
+          pr_url=$(gh pr create \
             --base main \
             --head "${branch}" \
             --title "chore(gitops): promote ${ENVIRONMENT_NAME}" \
-            --body "Promotes immutable application image digests after verified GitHub build-provenance attestations through the protected GitOps path."
+            --body "Promotes immutable application image digests after verified GitHub build-provenance attestations through the protected GitOps path.")
+          echo "pr_url=${pr_url}" >> "${GITHUB_OUTPUT}"
+
+      # Pull requests opened with GITHUB_TOKEN do not emit another pull_request
+      # event, so explicitly run each ruleset-required workflow on the head SHA.
+      - name: Dispatch required promotion checks
+        if: steps.promotion.outputs.changed == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PROMOTION_BRANCH: ${{ steps.promotion.outputs.branch }}
+        run: |
+          gh workflow run "pr-validation.yml" --ref "${PROMOTION_BRANCH}"
+          gh workflow run "e2e-kind.yml" --ref "${PROMOTION_BRANCH}"
+          gh workflow run "security-scans.yml" --ref "${PROMOTION_BRANCH}"
 
       - name: Verify GitOps Reconcile Readiness
         run: |
           if [[ "${{ steps.promotion.outputs.changed }}" == "true" ]]; then
-            echo "GitOps promotion PR opened for ${{ inputs.environment }}."
+            echo "GitOps promotion PR opened for ${{ inputs.environment }}: ${{ steps.promotion.outputs.pr_url }}"
             echo "Argo CD will reconcile only after the audited desired-state change is merged."
           else
             echo "No desired-state change was required for ${{ inputs.environment }}."

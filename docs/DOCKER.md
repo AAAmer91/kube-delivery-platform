@@ -41,7 +41,7 @@ The GitHub workflows:
 - attach GitHub build provenance;
 - sign published image digests with keyless Cosign signing.
 
-After those controls complete, each matrix job writes an image-coordinate table to the GitHub Actions run summary. It distinguishes the source commit from the OCI manifest digest, shows the immutable `repository@sha256:...` reference, and provides the exact input name expected by the GitOps promotion workflow.
+After those controls complete, each matrix job writes an image-coordinate table to the GitHub Actions run summary. It distinguishes the source commit from the OCI manifest digest, shows the immutable `repository@sha256:...` reference, and provides the exact input name expected by the GitOps promotion workflow. On a qualifying `main` push, the jobs also upload their digests as machine-readable artifacts; a fail-closed collector pairs the two outputs from that exact run before automatic staging promotion begins.
 
 These outputs improve traceability but do not replace dependency review, base-image maintenance, or runtime monitoring.
 

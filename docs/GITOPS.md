@@ -44,6 +44,25 @@ Three failed measurements cause the rollout to abort. Argo Rollouts then returns
 
 Application images are referenced by immutable digest in environment values. The promotion workflow updates those values through a pull request, which keeps the proposed artifact change reviewable and auditable.
 
+### Automatic staging path
+
+A push to `main` that changes a service or the image-build workflow follows one continuous delivery chain:
+
+1. `build-and-publish.yml` builds both services from the same source commit.
+2. Each matrix job scans, publishes, signs, and attests its image, then uploads the resulting OCI digest as a small workflow artifact.
+3. A collector job downloads exactly those two artifacts from the current run and rejects missing, extra, or malformed values.
+4. The reusable `gitops-deploy.yml` workflow verifies both build-provenance attestations and proposes the digest pair in `values-staging.yaml`.
+5. The workflow opens a promotion pull request and explicitly runs the repository's required application, Kubernetes, and CodeQL checks against its head commit.
+6. After review and merge, Argo CD can reconcile the approved staging state.
+
+The digest handoff never searches for a merely "latest" successful run, so images from different commits cannot be paired accidentally. GitOps-only commits do not match the build workflow's path filter; merging the generated promotion PR therefore cannot start a promotion loop.
+
+### Manual and production path
+
+`gitops-deploy.yml` remains manually runnable from **Actions → GitOps Progressive Delivery & Promotion → Run workflow**. Choose `staging` or `production` and supply the two full OCI manifest digests in `sha256:<64 lowercase hexadecimal characters>` form. The build run summary displays these values and labels the corresponding input names.
+
+Manual staging promotion is useful for recovery or for intentionally redeploying a previously verified artifact. Production remains explicit: it is never invoked by the automatic staging chain and can be held behind GitHub environment reviewers. Both paths verify that the requested images were attested by this repository's build workflow before changing desired state.
+
 Promotion branches include both the GitHub run ID and run-attempt number. A rerun therefore opens a new branch instead of rewriting the branch created by an earlier attempt. After changing the workflow definition itself, start a new manual run because GitHub reruns use the workflow from the original run's commit.
 
 ## Operator commands

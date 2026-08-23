@@ -13,6 +13,8 @@ In **Settings → Actions → General**:
 No long-lived cloud or registry credential is required. GHCR publishing and GitHub attestations use the
 short-lived repository `GITHUB_TOKEN` and GitHub OIDC.
 
+The promotion job has `actions: write` in addition to its Git and pull-request permissions. GitHub intentionally prevents a pull request created with `GITHUB_TOKEN` from recursively emitting a `pull_request` workflow event. The job therefore uses that permission to explicitly dispatch `pr-validation.yml`, `e2e-kind.yml`, and `security-scans.yml` on the generated branch. This keeps the required checks attached to the proposed commit without introducing a personal access token.
+
 ## Ruleset for `main`
 
 Create a repository ruleset targeting `main` and require pull requests plus the status checks that match the workflow job names:
@@ -43,4 +45,4 @@ After the first successful image workflow, choose package visibility based on th
 
 ## Verification
 
-After configuration, open a pull request and confirm that required checks appear, image publishing is skipped for untrusted pull-request code, and production promotion waits for the configured environment approval. Repository settings should be reviewed periodically because they are not versioned with the workflow files.
+After configuration, change a service on `main` and confirm that the image workflow opens a staging promotion PR containing the two digests from that same run. Confirm that all required checks appear on the generated PR, image publishing is skipped for untrusted pull-request code, and production promotion waits for the configured environment approval. Repository settings should be reviewed periodically because they are not versioned with the workflow files.

@@ -3,6 +3,9 @@ name: "Build, Scan, and Publish Production Images"
 on:
   push:
     branches: [main]
+    paths:
+      - "services/**"
+      - ".github/workflows/build-and-publish.yml"
     tags: ["v*.*.*"]
   workflow_dispatch:
 
@@ -137,6 +140,9 @@ jobs:
               ;;
           esac
 
+          mkdir -p image-digests
+          printf '%s\n' "${DIGEST}" > "image-digests/${SERVICE_NAME}.digest"
+
           short_sha="${SOURCE_SHA:0:7}"
           immutable_ref="${IMAGE_NAME}@${DIGEST}"
           commit_url="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/commit/${SOURCE_SHA}"
@@ -162,3 +168,63 @@ jobs:
             echo
             echo "> Use the OCI manifest digest—not the commit SHA or source tag—when running the GitOps promotion workflow."
           } >> "${GITHUB_STEP_SUMMARY}"
+
+      - name: Upload immutable image digest
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: image-digest-${{ matrix.service.name }}
+          path: image-digests/${{ matrix.service.name }}.digest
+          if-no-files-found: error
+          retention-days: 7
+
+  collect-image-digests:
+    name: "Collect same-run image digests"
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: build-and-scan
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      actions: read
+      contents: read
+    outputs:
+      shipment_api_digest: ${{ steps.collect.outputs.shipment_api_digest }}
+      tracking_worker_digest: ${{ steps.collect.outputs.tracking_worker_digest }}
+    steps:
+      - name: Checkout digest collector
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Download same-run digest artifacts
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          pattern: image-digest-*
+          path: image-digests
+          merge-multiple: true
+
+      - name: Validate and expose promotion inputs
+        id: collect
+        env:
+          SOURCE_SHA: ${{ github.sha }}
+        run: |
+          python scripts/collect_image_digests.py \
+            --directory image-digests \
+            --output "${GITHUB_OUTPUT}" \
+            --summary "${GITHUB_STEP_SUMMARY}" \
+            --source-sha "${SOURCE_SHA}"
+
+  promote-staging:
+    name: "Promote verified images to staging GitOps state"
+    needs: collect-image-digests
+    permissions:
+      actions: write
+      attestations: read
+      contents: write
+      deployments: write
+      packages: read
+      pull-requests: write
+    uses: ./.github/workflows/gitops-deploy.yml
+    with:
+      environment: staging
+      shipment_api_digest: ${{ needs.collect-image-digests.outputs.shipment_api_digest }}
+      tracking_worker_digest: ${{ needs.collect-image-digests.outputs.tracking_worker_digest }}
