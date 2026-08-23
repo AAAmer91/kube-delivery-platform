@@ -80,7 +80,9 @@ shipmentApi:
         port: 8080
       initialDelaySeconds: 2
       periodSeconds: 3
-      failureThreshold: 10
+      # The API performs bounded PostgreSQL and NATS retries before opening its
+      # HTTP port. Keep the startup window longer than that retry budget.
+      failureThreshold: 40
     liveness:
       httpGet:
         path: /healthz

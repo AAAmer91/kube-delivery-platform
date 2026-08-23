@@ -150,3 +150,74 @@ def test_default_deny_has_narrow_hook_egress_and_no_global_monitoring_ingress() 
             if "namespaceSelector" in peer
         ]
         assert {} not in selectors
+
+
+def test_preview_resource_names_match_ci_dependency_urls() -> None:
+    """Preview service/workload names are the stable names consumed by the E2E workflow."""
+    helm = os.getenv("HELM_BINARY") or shutil.which("helm")
+    if not helm:
+        pytest.skip("Helm is not installed in this test environment")
+
+    repository = Path(__file__).resolve().parents[2]
+    chart = repository / "deploy" / "helm" / "kube-delivery-platform"
+    rendered = subprocess.run(
+        [
+            helm,
+            "template",
+            "kube-delivery",
+            str(chart),
+            "--namespace",
+            "delivery-preview",
+            "--values",
+            str(chart / "values-preview.yaml"),
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout
+    documents = [document for document in yaml.safe_load_all(rendered) if document]
+    resource_names = {document["metadata"]["name"] for document in documents}
+
+    assert "kube-delivery-postgres" in resource_names
+    assert "kube-delivery-nats" in resource_names
+    assert "kube-delivery-shipment-api" in resource_names
+    assert "kube-delivery-tracking-worker" in resource_names
+
+
+def test_shipment_api_startup_probe_covers_dependency_retry_budget() -> None:
+    """Kubelet must not restart the API while its bounded dependency retries are active."""
+    helm = os.getenv("HELM_BINARY") or shutil.which("helm")
+    if not helm:
+        pytest.skip("Helm is not installed in this test environment")
+
+    repository = Path(__file__).resolve().parents[2]
+    chart = repository / "deploy" / "helm" / "kube-delivery-platform"
+    rendered = subprocess.run(
+        [
+            helm,
+            "template",
+            "contract",
+            str(chart),
+            "--namespace",
+            "preview",
+            "--values",
+            str(chart / "values-preview.yaml"),
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout
+    documents = [document for document in yaml.safe_load_all(rendered) if document]
+    deployment = next(
+        document
+        for document in documents
+        if document.get("kind") == "Deployment"
+        and document["metadata"]["name"].endswith("-shipment-api")
+    )
+    probe = deployment["spec"]["template"]["spec"]["containers"][0]["startupProbe"]
+    startup_budget_seconds = probe.get("initialDelaySeconds", 0) + (
+        probe["periodSeconds"] * probe["failureThreshold"]
+    )
+
+    # main.go retries PostgreSQL and NATS up to 30 times each with a two-second delay.
+    assert startup_budget_seconds >= 120

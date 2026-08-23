@@ -1,3 +1,5 @@
+fullnameOverride: kube-delivery
+
 global:
   environment: preview
   domain: preview.delivery.local
