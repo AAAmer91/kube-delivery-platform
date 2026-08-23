@@ -39,14 +39,14 @@ jobs:
           persist-credentials: false
 
       - name: Set up QEMU (Multi-Architecture Emulation)
-        uses: docker/setup-qemu-action@49b01bf588189e08ec3f285468f437b8b8497086 # v3.2.0
+        uses: docker/setup-qemu-action@c7c53464625b32c7a7e944ae62b3e17d2b600130 # v3
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@c47758b77c9736f4b2ef4073d4d51994fabfe349 # v3.7.1
 
       - name: Log in to GitHub Container Registry (GHCR)
         if: github.event_name != 'pull_request'
-        uses: docker/login-action@9780b0c442f84824feb055e49c81bfa6a63a8d42 # v3.3.0
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
@@ -63,7 +63,7 @@ jobs:
 
       - name: Build and Push Multi-Architecture Image
         id: build
-        uses: docker/build-push-action@4f58ea79222b3b150c8844d69901d7071a2322e4 # v6.9.0
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
         with:
           context: ${{ matrix.service.context }}
           file: ${{ matrix.service.dockerfile }}
@@ -77,7 +77,7 @@ jobs:
           sbom: true
 
       - name: Run Trivy Container Vulnerability Scanner
-        uses: aquasecurity/trivy-action@915b19bbe73b9216aa891b610487198c35522ea9 # v0.28.0
+        uses: aquasecurity/trivy-action@57a97c7e7821a5776cebc9bb87c984fa69cba8f1 # v0.35.0
         with:
           image-ref: ghcr.io/${{ github.repository_owner }}/${{ matrix.service.name }}@${{ steps.build.outputs.digest }}
           format: "table"
