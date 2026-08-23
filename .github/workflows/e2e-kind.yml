@@ -222,7 +222,7 @@ jobs:
 
       - name: Prove Kyverno Validates Init Containers
         run: |
-          if kubectl apply --dry-run=server -f - 2> policy-denial.log <<'EOF'
+          if kubectl apply --dry-run=server -f - > policy-denial.log 2>&1 <<'EOF'
           apiVersion: v1
           kind: Pod
           metadata:
@@ -269,7 +269,8 @@ jobs:
             echo "ERROR: Kyverno admitted an init container without resource requests and limits."
             exit 1
           fi
-          grep "require-resource-limits" policy-denial.log
+          cat policy-denial.log
+          grep -E "require-resource-limits|CPU and memory requests and limits are required" policy-denial.log
           echo "Kyverno-specific init-container admission denial verified."
 
       - name: Run Test Suite & Generate Evidence Summary
