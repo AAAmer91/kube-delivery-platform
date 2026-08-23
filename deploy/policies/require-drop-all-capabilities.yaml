@@ -18,12 +18,15 @@ spec:
           - resources:
               kinds:
                 - Pod
+              namespaceSelector:
+                matchLabels:
+                  platform.kube-delivery.io/security-profile: restricted
       validate:
         message: "Containers must drop ALL capabilities (securityContext.capabilities.drop=['ALL'])."
-        pattern:
-          spec:
-            containers:
-              - securityContext:
-                  capabilities:
-                    drop:
-                      - ALL
+        foreach:
+          - list: request.object.spec.[ephemeralContainers, initContainers, containers][]
+            pattern:
+              securityContext:
+                capabilities:
+                  drop:
+                    - ALL

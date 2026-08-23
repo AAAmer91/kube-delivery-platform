@@ -9,15 +9,22 @@ The platform follows **declarative GitOps principles**: Git is the single source
 ```mermaid
 graph TD
     Root["Root Application<br/>(deploy/argocd/root-app.yaml)"]
+    Root --> Controllers["Platform Controllers<br/>ingress-nginx, Argo Rollouts, Kyverno<br/>Sync wave -4"]
+    Root --> Observe["Observability App<br/>kube-prometheus-stack 88.5.3<br/>Sync wave -2"]
+    Root --> Govern["Governance App<br/>Kyverno policies<br/>Sync wave -1"]
     Root --> Staging["Staging App<br/>(values-staging.yaml)<br/>Automated Sync & Prune"]
     Root --> Prod["Production App<br/>(values-prod.yaml)<br/>Protected / Manual Promotion"]
 ```
+
+Argo CD itself is the only bootstrap prerequisite. Once `root-app.yaml` is applied, the
+App-of-Apps installs pinned ingress-nginx, Argo Rollouts, and Kyverno controllers before
+observability, governance policies, and application environments.
 
 ---
 
 ## 🎯 Argo Rollouts Canary Strategy for `shipment-api`
 
-In staging and production, `shipment-api` is managed by an **Argo Rollout** rather than a standard Deployment.
+In staging and production, `shipment-api` is managed by an **Argo Rollout** rather than a standard Deployment. Argo Rollouts controls an NGINX canary ingress so the configured weights represent traffic, not merely replica ratios.
 
 ### Canary Traffic Progression
 1. **Step 1:** Route `10%` traffic to Canary $\to$ Pause 30s + Run Prometheus Analysis.

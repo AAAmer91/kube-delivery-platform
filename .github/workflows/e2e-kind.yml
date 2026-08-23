@@ -32,10 +32,20 @@ jobs:
         with:
           python-version: "3.12"
 
+      - name: Install Test Dependencies
+        run: python -m pip install -r services/tracking-worker/dev-requirements.txt
+
       - name: Build Local Test Images
         run: |
-          docker build -t ghcr.io/aaamer91/shipment-api:test -f services/shipment-api/Dockerfile services/shipment-api
-          docker build -t ghcr.io/aaamer91/tracking-worker:test -f services/tracking-worker/Dockerfile services/tracking-worker
+          docker buildx build --load \
+            --build-arg COMMIT_SHA="${GITHUB_SHA}" \
+            --tag ghcr.io/aaamer91/shipment-api:test \
+            --file services/shipment-api/Dockerfile \
+            services/shipment-api
+          docker buildx build --load \
+            --tag ghcr.io/aaamer91/tracking-worker:test \
+            --file services/tracking-worker/Dockerfile \
+            services/tracking-worker
 
       - name: Setup Kind Platform Cluster
         uses: ./.github/actions/setup-kind-platform
@@ -48,9 +58,17 @@ jobs:
           kind load docker-image ghcr.io/aaamer91/shipment-api:test --name kube-delivery-ci
           kind load docker-image ghcr.io/aaamer91/tracking-worker:test --name kube-delivery-ci
 
-      - name: Deploy Umbrella Helm Chart to Ephemeral Namespace
+      - name: Enforce Kyverno Governance in Preview Namespace
         run: |
           kubectl create namespace delivery-preview
+          kubectl label namespace delivery-preview platform.kube-delivery.io/security-profile=restricted
+          kubectl label namespace delivery-preview pod-security.kubernetes.io/enforce=restricted
+          kubectl label namespace delivery-preview pod-security.kubernetes.io/enforce-version=latest
+          kubectl apply -f deploy/policies
+          kubectl wait --for=condition=Ready clusterpolicy --all --timeout=120s
+
+      - name: Deploy Umbrella Helm Chart to Ephemeral Namespace
+        run: |
           DATABASE_PASSWORD="$(openssl rand -hex 24)"
           kubectl create secret generic kube-delivery-database \
             --namespace delivery-preview \
@@ -70,8 +88,7 @@ jobs:
 
       - name: Validate Argo CD Applications Against Installed CRDs
         run: |
-          kubectl apply --dry-run=server --validate=strict -f deploy/argocd/app-staging.yaml
-          kubectl apply --dry-run=server --validate=strict -f deploy/argocd/app-prod.yaml
+          kubectl apply --dry-run=server --validate=strict -f deploy/argocd
 
       - name: Await Kubernetes Workload Readiness (kubectl wait)
         run: |
@@ -90,16 +107,82 @@ jobs:
         run: |
           helm test kube-delivery -n delivery-preview
 
+      - name: Run Live Shipment Lifecycle Test
+        run: |
+          kubectl port-forward service/kube-delivery-shipment-api 18080:8080 -n delivery-preview > /tmp/port-forward.log 2>&1 &
+          PORT_FORWARD_PID=$!
+          trap 'kill ${PORT_FORWARD_PID} 2>/dev/null || true' EXIT
+          for attempt in {1..20}; do
+            if curl --fail --silent http://127.0.0.1:18080/healthz > /dev/null; then
+              break
+            fi
+            if [[ ${attempt} -eq 20 ]]; then
+              cat /tmp/port-forward.log
+              exit 1
+            fi
+            sleep 1
+          done
+          API_BASE_URL=http://127.0.0.1:18080 REQUIRE_LIVE_E2E=true \
+            python -m pytest tests/e2e/test_shipment_lifecycle.py -v
+
       - name: Run Chaos & Resilience Drills
         run: |
           echo "🔥 Running Chaos Drill 1: Terminating shipment-api pod and verifying self-healing..."
           API_POD=$(kubectl get pods -n delivery-preview -l app.kubernetes.io/name=shipment-api -o jsonpath='{.items[0].metadata.name}')
           kubectl delete pod "$API_POD" -n delivery-preview
-          kubectl rollout status deployment/kube-delivery-shipment-api -n delivery-preview --timeout=60s
+          REPLACEMENT_POD=""
+          RECOVERED=false
+          for attempt in {1..60}; do
+            REPLACEMENT_POD=$(kubectl get pods -n delivery-preview \
+              -l app.kubernetes.io/name=shipment-api \
+              -o jsonpath='{.items[?(@.status.phase=="Running")].metadata.name}' | tr ' ' '\n' | grep -v "^${API_POD}$" | head -n 1 || true)
+            if [[ -n "${REPLACEMENT_POD}" ]] && \
+              kubectl wait --for=condition=Ready "pod/${REPLACEMENT_POD}" -n delivery-preview --timeout=2s; then
+              RECOVERED=true
+              break
+            fi
+            sleep 2
+          done
+          if [[ "${RECOVERED}" != "true" ]]; then
+            echo "ERROR: Deployment did not produce a new Ready pod after deletion."
+            exit 1
+          fi
+          echo "Self-healing verified: ${API_POD} was replaced by ${REPLACEMENT_POD}."
 
           echo "🔥 Running Chaos Drill 2: Verifying NetworkPolicy isolation..."
           POSTGRES_IP=$(kubectl get service kube-delivery-postgres -n delivery-preview -o jsonpath='{.spec.clusterIP}')
-          kubectl run rogue-pod --image=busybox:1.36.1 -n delivery-preview --restart=Never -- sleep 3600
+          cat <<'EOF' | kubectl apply -f -
+          apiVersion: v1
+          kind: Pod
+          metadata:
+            name: rogue-pod
+            namespace: delivery-preview
+          spec:
+            restartPolicy: Never
+            securityContext:
+              runAsNonRoot: true
+              runAsUser: 10001
+              seccompProfile:
+                type: RuntimeDefault
+            containers:
+              - name: probe
+                image: docker.io/library/busybox:1.36.1
+                command: ["sleep", "3600"]
+                securityContext:
+                  allowPrivilegeEscalation: false
+                  readOnlyRootFilesystem: true
+                  runAsNonRoot: true
+                  runAsUser: 10001
+                  capabilities:
+                    drop: ["ALL"]
+                resources:
+                  requests:
+                    cpu: 5m
+                    memory: 8Mi
+                  limits:
+                    cpu: 25m
+                    memory: 32Mi
+          EOF
           kubectl wait --for=condition=Ready pod/rogue-pod -n delivery-preview --timeout=60s
           # Use the ClusterIP so a denied DNS request cannot masquerade as database isolation.
           if kubectl exec rogue-pod -n delivery-preview -- nc -zvw 3 "$POSTGRES_IP" 5432; then
@@ -110,9 +193,60 @@ jobs:
           fi
           kubectl delete pod rogue-pod -n delivery-preview --force --grace-period=0 || true
 
+      - name: Prove Kyverno Validates Init Containers
+        run: |
+          if kubectl apply --dry-run=server -f - 2> policy-denial.log <<'EOF'
+          apiVersion: v1
+          kind: Pod
+          metadata:
+            name: policy-violation
+            namespace: delivery-preview
+          spec:
+            restartPolicy: Never
+            securityContext:
+              runAsNonRoot: true
+              runAsUser: 10001
+              seccompProfile:
+                type: RuntimeDefault
+            initContainers:
+              - name: unchecked-init
+                image: docker.io/library/busybox:1.36.1
+                command: ["sh", "-c", "true"]
+                securityContext:
+                  allowPrivilegeEscalation: false
+                  readOnlyRootFilesystem: true
+                  runAsNonRoot: true
+                  runAsUser: 10001
+                  capabilities:
+                    drop: ["ALL"]
+            containers:
+              - name: compliant-app
+                image: docker.io/library/busybox:1.36.1
+                command: ["sleep", "30"]
+                securityContext:
+                  allowPrivilegeEscalation: false
+                  readOnlyRootFilesystem: true
+                  runAsNonRoot: true
+                  runAsUser: 10001
+                  capabilities:
+                    drop: ["ALL"]
+                resources:
+                  requests:
+                    cpu: 5m
+                    memory: 8Mi
+                  limits:
+                    cpu: 25m
+                    memory: 32Mi
+          EOF
+          then
+            echo "ERROR: Kyverno admitted an init container without resource requests and limits."
+            exit 1
+          fi
+          grep "require-resource-limits" policy-denial.log
+          echo "Kyverno-specific init-container admission denial verified."
+
       - name: Run Test Suite & Generate Evidence Summary
         run: |
-          python -m pip install -r services/tracking-worker/dev-requirements.txt
           python -m pytest tests/resilience -v
           python scripts/generate_summary.py
 

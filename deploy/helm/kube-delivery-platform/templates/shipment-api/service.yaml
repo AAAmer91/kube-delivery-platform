@@ -1,3 +1,4 @@
+{{- if not .Values.shipmentApi.argoRollouts.enabled }}
 apiVersion: v1
 kind: Service
 metadata:
@@ -15,6 +16,7 @@ spec:
       protocol: TCP
   selector:
     {{- include "kube-delivery.shipmentApi.selectorLabels" . | nindent 4 }}
+{{- end }}
 {{- if .Values.shipmentApi.argoRollouts.enabled }}
 ---
 apiVersion: v1

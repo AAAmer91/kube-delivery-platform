@@ -69,9 +69,10 @@ class DeliveryEventConsumer:
         except Exception as err:
             logger.warning("Pull subscribe initialization note: %s", err)
 
-    async def is_connected(self) -> bool:
+    @property
+    def is_connected(self) -> bool:
         """Checks if NATS connection is active."""
-        return self._nc is not None and self._nc.is_connected
+        return bool(self._nc is not None and self._nc.is_connected and self._psub is not None)
 
     async def start(self) -> None:
         """Starts the event consumer processing loop."""

@@ -23,6 +23,8 @@ def test_live_shipment_lifecycle() -> None:
             data = json.loads(resp.read().decode())
             assert data.get("status") == "UP"
     except Exception as err:
+        if os.getenv("REQUIRE_LIVE_E2E", "false").lower() == "true":
+            pytest.fail(f"Required live cluster endpoint is not reachable: {err}")
         pytest.skip(f"Live cluster endpoint not reachable ({err}); skipping live E2E test")
 
     # 2. Create Shipment via REST API

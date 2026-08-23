@@ -25,6 +25,39 @@ _global_repo: PostgresRepository | None = None
 _global_consumer: DeliveryEventConsumer | None = None
 
 
+def dependencies_ready() -> bool:
+    """Returns true only when both stateful dependencies are actively connected."""
+    return bool(
+        _global_repo is not None
+        and _global_repo.is_connected
+        and _global_consumer is not None
+        and _global_consumer.is_connected
+    )
+
+
+async def connect_database_with_retry(
+    repo: PostgresRepository,
+    retry_backoff_sec: float,
+) -> None:
+    """Waits for PostgreSQL during concurrent Kubernetes startup."""
+    while True:
+        try:
+            await repo.connect()
+            return
+        except Exception as err:
+            logger.warning("Database connection failed: %s; retrying", err)
+            await asyncio.sleep(retry_backoff_sec)
+
+
+async def monitor_database(repo: PostgresRepository, retry_backoff_sec: float) -> None:
+    """Continuously probes PostgreSQL and rebuilds a failed connection pool."""
+    while True:
+        if not await repo.ping():
+            await repo.close()
+            await connect_database_with_retry(repo, retry_backoff_sec)
+        await asyncio.sleep(retry_backoff_sec)
+
+
 class HealthHandler(BaseHTTPRequestHandler):
     """Simple HTTP probe handler for Kubernetes liveness & readiness."""
 
@@ -37,9 +70,7 @@ class HealthHandler(BaseHTTPRequestHandler):
             return
 
         if self.path == "/ready":
-            is_ready = True
-            if _global_repo is None or _global_consumer is None:
-                is_ready = False
+            is_ready = dependencies_ready()
 
             if is_ready:
                 self.send_response(200)
@@ -88,11 +119,8 @@ async def main() -> None:
 
     # Initialize repository
     repo = PostgresRepository(cfg.database_url)
-    try:
-        await repo.connect()
-        _global_repo = repo
-    except Exception as err:
-        logger.warning("Database initial connect note: %s (will retry)", err)
+    await connect_database_with_retry(repo, cfg.retry_backoff_sec)
+    _global_repo = repo
 
     # Initialize consumer
     consumer = DeliveryEventConsumer(cfg, repo)
@@ -114,6 +142,7 @@ async def main() -> None:
 
     # Run consumer task in background
     consumer_task = asyncio.create_task(consumer.start())
+    database_monitor_task = asyncio.create_task(monitor_database(repo, cfg.retry_backoff_sec))
 
     # Wait for shutdown signal
     await stop_event.wait()
@@ -122,6 +151,7 @@ async def main() -> None:
     logger.info("Stopping event consumer...")
     await consumer.stop()
     consumer_task.cancel()
+    database_monitor_task.cancel()
 
     logger.info("Closing database connection pool...")
     await repo.close()

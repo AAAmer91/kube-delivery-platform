@@ -18,9 +18,12 @@ spec:
           - resources:
               kinds:
                 - Pod
+              namespaceSelector:
+                matchLabels:
+                  platform.kube-delivery.io/security-profile: restricted
       validate:
         message: "Images must originate from approved registries (ghcr.io, docker.io, gcr.io, quay.io, curlimages)."
-        pattern:
-          spec:
-            containers:
-              - image: "ghcr.io/* | docker.io/* | gcr.io/* | quay.io/* | curlimages/* | postgres:* | nats:* | alpine:*"
+        foreach:
+          - list: request.object.spec.[ephemeralContainers, initContainers, containers][]
+            pattern:
+              image: "ghcr.io/* | docker.io/* | gcr.io/* | quay.io/* | curlimages/* | postgres:* | nats:* | alpine:*"

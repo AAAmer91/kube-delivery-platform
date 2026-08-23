@@ -18,31 +18,52 @@ import (
 
 var Version = "1.0.0"
 
+func retryConnect[T any](
+	name string,
+	maxAttempts int,
+	delay time.Duration,
+	connect func() (T, error),
+) (T, error) {
+	var zero T
+	var lastErr error
+	for attempt := 1; attempt <= maxAttempts; attempt++ {
+		value, err := connect()
+		if err == nil {
+			return value, nil
+		}
+		lastErr = err
+		log.Printf("[WARN] %s connection attempt %d/%d failed: %v", name, attempt, maxAttempts, err)
+		if attempt < maxAttempts {
+			time.Sleep(delay)
+		}
+	}
+	return zero, fmt.Errorf("%s unavailable after %d attempts: %w", name, maxAttempts, lastErr)
+}
+
 func main() {
 	log.Printf("[INFO] Starting shipment-api version %s...", Version)
 
 	cfg := config.Load()
 
 	// Initialize PostgreSQL repository
-	var repo repository.Repository
-	var err error
-	repo, err = repository.NewPostgresRepository(cfg)
+	repo, err := retryConnect("PostgreSQL", 30, 2*time.Second, func() (repository.Repository, error) {
+		return repository.NewPostgresRepository(cfg)
+	})
 	if err != nil {
-		log.Printf("[WARN] Starting without active database connection: %v (will retry on probe)", err)
-	} else {
-		defer repo.Close()
-		log.Println("[INFO] PostgreSQL repository initialized successfully.")
+		log.Fatalf("[FATAL] %v", err)
 	}
+	defer repo.Close()
+	log.Println("[INFO] PostgreSQL repository initialized successfully.")
 
 	// Initialize NATS JetStream publisher
-	var publisher events.EventPublisher
-	publisher, err = events.NewNatsPublisher(cfg)
+	publisher, err := retryConnect("NATS JetStream", 30, 2*time.Second, func() (events.EventPublisher, error) {
+		return events.NewNatsPublisher(cfg)
+	})
 	if err != nil {
-		log.Printf("[WARN] Starting without active NATS connection: %v (will retry on probe)", err)
-	} else {
-		defer publisher.Close()
-		log.Println("[INFO] NATS JetStream publisher initialized successfully.")
+		log.Fatalf("[FATAL] %v", err)
 	}
+	defer publisher.Close()
+	log.Println("[INFO] NATS JetStream publisher initialized successfully.")
 
 	server := handlers.NewServer(repo, publisher, Version)
 	httpServer := &http.Server{

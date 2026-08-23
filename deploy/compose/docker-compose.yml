@@ -63,7 +63,7 @@ services:
       start_period: 3s
 
   # ============================================================================
-  # Application: shipment-api (Go 1.23 REST API)
+  # Application: shipment-api (Go 1.27 REST API)
   # ============================================================================
   shipment-api:
     build:

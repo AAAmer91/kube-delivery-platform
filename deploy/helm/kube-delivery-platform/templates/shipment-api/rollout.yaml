@@ -15,12 +15,17 @@ spec:
     canary:
       canaryService: {{ include "kube-delivery.fullname" . }}-shipment-api-canary
       stableService: {{ include "kube-delivery.fullname" . }}-shipment-api-stable
+      trafficRouting:
+        nginx:
+          stableIngress: {{ include "kube-delivery.fullname" . }}-ingress
       analysis:
         templates:
           - templateName: {{ include "kube-delivery.fullname" . }}-shipment-api-analysis
         args:
-          - name: service-name
-            value: {{ include "kube-delivery.fullname" . }}-shipment-api
+          - name: namespace
+            value: {{ .Release.Namespace }}
+          - name: canary-service
+            value: {{ include "kube-delivery.fullname" . }}-shipment-api-canary
       steps:
         - setWeight: 10
         - pause: { duration: 30s }

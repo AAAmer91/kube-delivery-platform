@@ -1,22 +1,25 @@
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
-  name: kube-delivery-root-app
+  name: platform-kyverno
   namespace: argocd
-  finalizers:
-    - resources-finalizer.argocd.argoproj.io
+  annotations:
+    argocd.argoproj.io/sync-wave: "-4"
 spec:
   project: default
   source:
-    repoURL: https://github.com/AAAmer91/kube-delivery-platform.git
-    targetRevision: main
-    path: deploy/argocd
+    repoURL: https://kyverno.github.io/kyverno
+    chart: kyverno
+    targetRevision: 3.9.0
+    helm:
+      releaseName: kyverno
   destination:
     server: https://kubernetes.default.svc
-    namespace: argocd
+    namespace: kyverno
   syncPolicy:
     automated:
       prune: true
       selfHeal: true
     syncOptions:
       - CreateNamespace=true
+      - ServerSideApply=true

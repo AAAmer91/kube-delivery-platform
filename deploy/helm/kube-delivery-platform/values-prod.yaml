@@ -34,6 +34,10 @@ trackingWorker:
       cpu: 500m
       memory: 512Mi
 
+observability:
+  serviceMonitor:
+    enabled: true
+
 postgres:
   persistence:
     enabled: true

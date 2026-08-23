@@ -1,16 +1,16 @@
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
-  name: kube-delivery-root-app
+  name: platform-governance
   namespace: argocd
-  finalizers:
-    - resources-finalizer.argocd.argoproj.io
+  annotations:
+    argocd.argoproj.io/sync-wave: "-1"
 spec:
   project: default
   source:
     repoURL: https://github.com/AAAmer91/kube-delivery-platform.git
     targetRevision: main
-    path: deploy/argocd
+    path: deploy/policies
   destination:
     server: https://kubernetes.default.svc
     namespace: argocd
@@ -18,5 +18,3 @@ spec:
     automated:
       prune: true
       selfHeal: true
-    syncOptions:
-      - CreateNamespace=true

@@ -18,6 +18,10 @@ trackingWorker:
     minReplicas: 2
     maxReplicas: 4
 
+observability:
+  serviceMonitor:
+    enabled: true
+
 postgres:
   persistence:
     enabled: true

@@ -5,6 +5,7 @@ metadata:
   namespace: {{ .Release.Namespace }}
   labels:
     {{- include "kube-delivery.labels" . | nindent 4 }}
+    app.kubernetes.io/component: helm-test
   annotations:
     "helm.sh/hook": test
     "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
@@ -27,7 +28,18 @@ spec:
         capabilities:
           drop:
             - ALL
+      resources:
+        requests:
+          cpu: 5m
+          memory: 8Mi
+        limits:
+          cpu: 25m
+          memory: 32Mi
       command:
         - curl
         - -f
+        {{- if .Values.shipmentApi.argoRollouts.enabled }}
+        - "http://{{ include "kube-delivery.fullname" . }}-shipment-api-stable:8080/healthz"
+        {{- else }}
         - "http://{{ include "kube-delivery.fullname" . }}-shipment-api:8080/healthz"
+        {{- end }}

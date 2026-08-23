@@ -1,0 +1,70 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: platform-observability
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "-2"
+spec:
+  project: default
+  source:
+    repoURL: https://prometheus-community.github.io/helm-charts
+    chart: kube-prometheus-stack
+    targetRevision: 88.5.3
+    helm:
+      releaseName: prometheus
+      valuesObject:
+        alertmanager:
+          enabled: false
+        additionalPrometheusRulesMap:
+          kube-delivery:
+            groups:
+              - name: kube-delivery-alerts
+                rules:
+                  - alert: HighHttpErrorRate
+                    expr: >-
+                      (sum(rate(kube_delivery_shipment_api_http_requests_total{status=~"5.."}[2m])) or vector(0))
+                      / clamp_min(sum(rate(kube_delivery_shipment_api_http_requests_total[2m])) or vector(0), 1) > 0.05
+                    for: 1m
+                    labels:
+                      severity: critical
+                      platform: kube-delivery
+                    annotations:
+                      summary: Shipment API HTTP 5xx error rate exceeds 5 percent.
+                  - alert: HighHttpLatencyP99
+                    expr: >-
+                      (histogram_quantile(0.99,
+                      sum(rate(kube_delivery_shipment_api_http_request_duration_seconds_bucket[2m])) by (le))
+                      or vector(0)) > 0.500
+                    for: 2m
+                    labels:
+                      severity: warning
+                      platform: kube-delivery
+                    annotations:
+                      summary: Shipment API p99 latency exceeds 500 milliseconds.
+                  - alert: ExcessiveWorkerPoisonEvents
+                    expr: (sum(rate(kube_delivery_worker_poison_messages_total[5m])) or vector(0)) > 0.1
+                    for: 2m
+                    labels:
+                      severity: warning
+                      platform: kube-delivery
+                    annotations:
+                      summary: Tracking worker poison-message rate is elevated.
+        prometheus:
+          prometheusSpec:
+            retention: 7d
+            serviceMonitorSelectorNilUsesHelmValues: false
+        grafana:
+          enabled: true
+          persistence:
+            enabled: false
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: monitoring
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true

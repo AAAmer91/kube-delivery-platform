@@ -5,11 +5,13 @@ metadata:
   namespace: argocd
   labels:
     environment: staging
+  annotations:
+    argocd.argoproj.io/sync-wave: "0"
 spec:
   project: default
   source:
     repoURL: https://github.com/AAAmer91/kube-delivery-platform.git
-    targetRevision: HEAD
+    targetRevision: main
     path: deploy/helm/kube-delivery-platform
     helm:
       valueFiles:
@@ -24,3 +26,8 @@ spec:
       selfHeal: true
     syncOptions:
       - CreateNamespace=true
+    managedNamespaceMetadata:
+      labels:
+        platform.kube-delivery.io/security-profile: restricted
+        pod-security.kubernetes.io/enforce: restricted
+        pod-security.kubernetes.io/enforce-version: latest

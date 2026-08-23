@@ -24,7 +24,11 @@ spec:
             pathType: {{ .pathType }}
             backend:
               service:
+                {{- if and (eq .service "shipment-api") $.Values.shipmentApi.argoRollouts.enabled }}
+                name: {{ include "kube-delivery.fullname" $ }}-shipment-api-stable
+                {{- else }}
                 name: {{ include "kube-delivery.fullname" $ }}-{{ .service }}
+                {{- end }}
                 port:
                   number: {{ .port }}
           {{- end }}

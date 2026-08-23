@@ -18,15 +18,18 @@ spec:
           - resources:
               kinds:
                 - Pod
+              namespaceSelector:
+                matchLabels:
+                  platform.kube-delivery.io/security-profile: restricted
       validate:
         message: "CPU and memory requests and limits are required for all containers."
-        pattern:
-          spec:
-            containers:
-              - resources:
-                  requests:
-                    memory: "?*"
-                    cpu: "?*"
-                  limits:
-                    memory: "?*"
-                    cpu: "?*"
+        foreach:
+          - list: request.object.spec.[ephemeralContainers, initContainers, containers][]
+            pattern:
+              resources:
+                requests:
+                  memory: "?*"
+                  cpu: "?*"
+                limits:
+                  memory: "?*"
+                  cpu: "?*"

@@ -18,6 +18,12 @@ class PostgresRepository:
     def __init__(self, dsn: str):
         self._dsn = dsn
         self._pool: asyncpg.Pool | None = None
+        self._healthy = False
+
+    @property
+    def is_connected(self) -> bool:
+        """Returns the latest actively probed database state."""
+        return self._pool is not None and self._healthy
 
     async def connect(self) -> None:
         """Initializes the asyncpg connection pool."""
@@ -28,17 +34,21 @@ class PostgresRepository:
                 max_size=20,
                 timeout=5.0,
             )
+            self._healthy = True
             logger.info("PostgreSQL connection pool established.")
 
     async def ping(self) -> bool:
         """Pings the database to verify connectivity."""
         if self._pool is None:
+            self._healthy = False
             return False
         try:
             async with self._pool.acquire() as conn:
                 await conn.fetchval("SELECT 1")
+                self._healthy = True
                 return True
         except Exception as err:
+            self._healthy = False
             logger.warning("Database ping failed: %s", err)
             return False
 
@@ -90,4 +100,5 @@ class PostgresRepository:
         if self._pool is not None:
             await self._pool.close()
             self._pool = None
+            self._healthy = False
             logger.info("PostgreSQL connection pool closed.")

@@ -9,29 +9,32 @@ metadata:
     app.kubernetes.io/component: api
 spec:
   args:
-    - name: service-name
+    - name: namespace
+    - name: canary-service
     - name: prometheus-server
-      value: http://prometheus-server.monitoring.svc.cluster.local:9090
+      value: http://prometheus-kube-prometheus-prometheus.monitoring.svc.cluster.local:9090
   metrics:
     - name: success-rate
       interval: 10s
       failureLimit: 3
-      successCondition: result[0] <= 0.01
+      successCondition: len(result) > 0 && !isNaN(result[0]) && result[0] <= 0.01
+      failureCondition: len(result) == 0 || isNaN(result[0]) || result[0] > 0.01
       provider:
         prometheus:
           address: "{{ `{{ args.prometheus-server }}` }}"
           query: >-
-            sum(rate(kube_delivery_shipment_api_http_requests_total{status=~"5.."}[1m]))
+            sum(rate(kube_delivery_shipment_api_http_requests_total{namespace="{{ `{{ args.namespace }}` }}",service="{{ `{{ args.canary-service }}` }}",status=~"5.."}[1m]))
             /
-            (sum(rate(kube_delivery_shipment_api_http_requests_total[1m])) > 0 or vector(1))
+            sum(rate(kube_delivery_shipment_api_http_requests_total{namespace="{{ `{{ args.namespace }}` }}",service="{{ `{{ args.canary-service }}` }}"}[1m]))
     - name: latency-p99
       interval: 10s
       failureLimit: 3
-      successCondition: result[0] <= 0.500
+      successCondition: len(result) > 0 && !isNaN(result[0]) && result[0] <= 0.500
+      failureCondition: len(result) == 0 || isNaN(result[0]) || result[0] > 0.500
       provider:
         prometheus:
           address: "{{ `{{ args.prometheus-server }}` }}"
           query: >-
-            histogram_quantile(0.99,
-              sum(rate(kube_delivery_shipment_api_http_request_duration_seconds_bucket[1m])) by (le))
+            (histogram_quantile(0.99,
+              sum(rate(kube_delivery_shipment_api_http_request_duration_seconds_bucket{namespace="{{ `{{ args.namespace }}` }}",service="{{ `{{ args.canary-service }}` }}"}[1m])) by (le)))
 {{- end }}

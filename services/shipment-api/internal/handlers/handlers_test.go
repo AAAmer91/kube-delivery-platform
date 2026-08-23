@@ -117,6 +117,18 @@ func TestReadyEndpoint(t *testing.T) {
 	}
 }
 
+func TestReadyEndpointRejectsMissingDependencies(t *testing.T) {
+	server := NewServer(nil, nil, "1.0.0")
+	req := httptest.NewRequest(http.MethodGet, "/ready", nil)
+	w := httptest.NewRecorder()
+
+	server.Routes().ServeHTTP(w, req)
+
+	if w.Code != http.StatusServiceUnavailable {
+		t.Fatalf("expected status 503, got %d: %s", w.Code, w.Body.String())
+	}
+}
+
 func TestCreateShipmentHappyPath(t *testing.T) {
 	repo := newMockRepository()
 	pub := newMockPublisher()
@@ -177,5 +189,25 @@ func TestCreateShipmentValidationError(t *testing.T) {
 
 	if w.Code != http.StatusUnprocessableEntity {
 		t.Fatalf("expected status 422 Unprocessable Entity, got %d", w.Code)
+	}
+}
+
+func TestCreateShipmentRejectsMissingDependencies(t *testing.T) {
+	server := NewServer(nil, nil, "1.0.0")
+	payload := domain.CreateShipmentRequest{
+		SenderName:    "Alice Smith",
+		RecipientName: "Bob Jones",
+		Origin:        "Seattle, WA",
+		Destination:   "New York, NY",
+		WeightKG:      4.25,
+	}
+	body, _ := json.Marshal(payload)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/shipments", bytes.NewReader(body))
+	w := httptest.NewRecorder()
+
+	server.Routes().ServeHTTP(w, req)
+
+	if w.Code != http.StatusServiceUnavailable {
+		t.Fatalf("expected status 503, got %d: %s", w.Code, w.Body.String())
 	}
 }

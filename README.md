@@ -3,6 +3,7 @@
 [![CI/CD Quality Gates](https://github.com/AAAmer91/kube-delivery-platform/actions/workflows/pr-validation.yml/badge.svg)](https://github.com/AAAmer91/kube-delivery-platform/actions/workflows/pr-validation.yml)
 [![Kind Runtime & Chaos](https://github.com/AAAmer91/kube-delivery-platform/actions/workflows/e2e-kind.yml/badge.svg)](https://github.com/AAAmer91/kube-delivery-platform/actions/workflows/e2e-kind.yml)
 [![Security SAST](https://github.com/AAAmer91/kube-delivery-platform/actions/workflows/security-scans.yml/badge.svg)](https://github.com/AAAmer91/kube-delivery-platform/actions/workflows/security-scans.yml)
+[![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/AAAmer91/kube-delivery-platform/badge)](https://scorecard.dev/viewer/?uri=github.com/AAAmer91/kube-delivery-platform)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
 An enterprise-grade, cloud-native delivery platform engineered to demonstrate advanced **Docker container hardening**, **Kubernetes platform engineering**, **Argo CD GitOps**, and **Argo Rollouts progressive canary delivery**.
@@ -57,10 +58,10 @@ flowchart TD
 | :--- | :--- |
 | **🐳 Docker Engineering** | Multi-stage builds, minimal non-root base images (`UID 10001`), BuildKit cache mounts, read-only root filesystems, explicit health checks, Hadolint linting, blocking Trivy CVE scans, CycloneDX SBOMs, signed provenance/SBOM attestations, and multi-arch images (`linux/amd64`, `linux/arm64`). |
 | **☸️ Kubernetes Platform** | Umbrella Helm chart (`values-preview.yaml`, `values-staging.yaml`, `values-prod.yaml`), zero-trust `NetworkPolicy` (default-deny), `HorizontalPodAutoscaler` (HPA), `PodDisruptionBudget` (PDB), `TopologySpreadConstraints`, Pod Anti-Affinity, least-privilege RBAC. |
-| **🛡️ Kyverno Governance** | Policy-as-code cluster admission: disallows root users, mandates CPU/memory limits, enforces read-only rootfs, drops ALL capabilities, restricts image registries. |
-| **🚀 GitOps & Progressive Delivery** | Argo CD App-of-Apps pattern (`root-app.yaml`, `app-staging.yaml`, `app-prod.yaml`), Argo Rollouts canary traffic steps (`10% -> 25% -> 50% -> 100%`) with automated metric rollback gates (`AnalysisTemplate`). |
+| **🛡️ Kyverno Governance** | Scoped policy-as-code admission: disallows root users, mandates CPU/memory limits, enforces read-only rootfs for application workloads, drops ALL capabilities, restricts image registries, and proves denial in KinD. |
+| **🚀 GitOps & Progressive Delivery** | Argo CD App-of-Apps bootstraps observability and governance before environments; Argo Rollouts drives NGINX-weighted canary steps (`10% -> 25% -> 50% -> 100%`) with Prometheus analysis gates. |
 | **📊 Observability & RED Metrics** | Prometheus metric scraping, alert rules for error spikes and consumer lag, OpenTelemetry collector, Grafana dashboard as code visualizing RED metrics (Rate, Errors, Duration). |
-| **🧪 Automated Chaos Drills** | Automated pod deletion self-healing verification, unauthorized NetworkPolicy breach tests, HPA scaling under load, and deliberate bad-canary rollback drills. |
+| **🧪 Runtime Evidence** | Live shipment lifecycle test, Helm test hook, pod-deletion self-healing drill, real unauthorized TCP NetworkPolicy denial, and server-side Argo CD CRD validation in an ephemeral three-node KinD cluster. |
 
 ---
 
@@ -124,6 +125,7 @@ make compose-up
 * [🚀 GitOps & Progressive Delivery with Argo](docs/GITOPS.md)
 * [🛡️ Platform Security & Threat Model](docs/SECURITY.md)
 * [📖 Platform Operations & Incident Runbook](docs/RUNBOOK.md)
+* [⚙️ Required GitHub Repository Settings](docs/GITHUB_SETUP.md)
 
 ---
 

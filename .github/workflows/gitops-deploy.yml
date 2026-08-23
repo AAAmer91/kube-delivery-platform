@@ -21,8 +21,10 @@ on:
         type: string
 
 permissions:
+  attestations: read
   contents: write
   deployments: write
+  packages: read
   pull-requests: write
 
 concurrency:
@@ -48,6 +50,21 @@ jobs:
           digest_pattern='^sha256:[a-f0-9]{64}$'
           [[ "${SHIPMENT_API_DIGEST}" =~ ${digest_pattern} ]]
           [[ "${TRACKING_WORKER_DIGEST}" =~ ${digest_pattern} ]]
+
+      - name: Verify image build provenance attestations
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SHIPMENT_API_DIGEST: ${{ inputs.shipment_api_digest }}
+          TRACKING_WORKER_DIGEST: ${{ inputs.tracking_worker_digest }}
+        run: |
+          echo "${GH_TOKEN}" | docker login ghcr.io --username "${GITHUB_ACTOR}" --password-stdin
+          signer_workflow="${GITHUB_REPOSITORY}/.github/workflows/build-and-publish.yml"
+          gh attestation verify "oci://ghcr.io/aaamer91/shipment-api@${SHIPMENT_API_DIGEST}" \
+            --repo "${GITHUB_REPOSITORY}" \
+            --signer-workflow "${signer_workflow}"
+          gh attestation verify "oci://ghcr.io/aaamer91/tracking-worker@${TRACKING_WORKER_DIGEST}" \
+            --repo "${GITHUB_REPOSITORY}" \
+            --signer-workflow "${signer_workflow}"
 
       - name: Update only application image digests
         env:
@@ -80,6 +97,7 @@ jobs:
         run: helm template promotion deploy/helm/kube-delivery-platform --values "${VALUES_FILE}" > /dev/null
 
       - name: Open auditable promotion pull request
+        id: promotion
         env:
           GH_TOKEN: ${{ github.token }}
           ENVIRONMENT_NAME: ${{ inputs.environment }}
@@ -90,15 +108,25 @@ jobs:
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git switch -c "${branch}"
           git add "${VALUES_FILE}"
+          if git diff --cached --quiet; then
+            echo "changed=false" >> "${GITHUB_OUTPUT}"
+            echo "Requested digests already match ${ENVIRONMENT_NAME}; no promotion PR is needed."
+            exit 0
+          fi
+          echo "changed=true" >> "${GITHUB_OUTPUT}"
           git commit -m "chore(gitops): promote ${ENVIRONMENT_NAME} image digests"
           git push "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" "HEAD:${branch}"
           gh pr create \
             --base main \
             --head "${branch}" \
             --title "chore(gitops): promote ${ENVIRONMENT_NAME}" \
-            --body "Promotes signed application image digests through the protected GitOps path."
+            --body "Promotes immutable application image digests after verified GitHub build-provenance attestations through the protected GitOps path."
 
       - name: Verify GitOps Reconcile Readiness
         run: |
-          echo "GitOps promotion PR opened for ${{ inputs.environment }}."
-          echo "Argo CD will reconcile only after the audited desired-state change is merged."
+          if [[ "${{ steps.promotion.outputs.changed }}" == "true" ]]; then
+            echo "GitOps promotion PR opened for ${{ inputs.environment }}."
+            echo "Argo CD will reconcile only after the audited desired-state change is merged."
+          else
+            echo "No desired-state change was required for ${{ inputs.environment }}."
+          fi

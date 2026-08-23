@@ -30,6 +30,10 @@ inputs:
     description: "Pinned Argo CD release"
     required: false
     default: "v3.5.1"
+  kyverno_version:
+    description: "Pinned Kyverno release"
+    required: false
+    default: "v1.18.2"
 
 runs:
   using: "composite"
@@ -103,4 +107,14 @@ runs:
           --timeout=300s
         kubectl rollout status statefulset/argocd-application-controller \
           --namespace argocd \
+          --timeout=300s
+
+    - name: Install Kyverno Admission Controllers
+      shell: bash
+      run: |
+        echo "Installing Kyverno ${{ inputs.kyverno_version }}..."
+        kubectl create -f "https://github.com/kyverno/kyverno/releases/download/${{ inputs.kyverno_version }}/install.yaml"
+        kubectl wait --namespace kyverno \
+          --for=condition=available deployment \
+          --selector=app.kubernetes.io/part-of=kyverno \
           --timeout=300s

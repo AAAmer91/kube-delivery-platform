@@ -113,7 +113,8 @@ func (s *Server) handleReady(w http.ResponseWriter, r *http.Request) {
 			dbStatus = "CONNECTED"
 		}
 	} else {
-		dbStatus = "DISABLED"
+		dbStatus = "DOWN: dependency not initialized"
+		isReady = false
 	}
 
 	if s.publisher != nil {
@@ -124,7 +125,8 @@ func (s *Server) handleReady(w http.ResponseWriter, r *http.Request) {
 			natsStatus = "CONNECTED"
 		}
 	} else {
-		natsStatus = "DISABLED"
+		natsStatus = "DOWN: dependency not initialized"
+		isReady = false
 	}
 
 	status := http.StatusOK
@@ -174,6 +176,11 @@ func (s *Server) createShipment(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if s.repo == nil || s.publisher == nil {
+		writeError(w, http.StatusServiceUnavailable, "Required dependencies are unavailable")
+		return
+	}
+
 	correlationID := w.Header().Get("X-Correlation-ID")
 	shipmentID := fmt.Sprintf("shp_%s", uuid.New().String()[:12])
 	trackingNumber := fmt.Sprintf("TRK-%d-%s", time.Now().Unix(), strings.ToUpper(uuid.New().String()[:6]))
@@ -189,28 +196,26 @@ func (s *Server) createShipment(w http.ResponseWriter, r *http.Request) {
 		WeightKG:       req.WeightKG,
 	}
 
-	if s.repo != nil {
-		if err := s.repo.Create(r.Context(), shipment); err != nil {
-			log.Printf("[ERROR] Failed to save shipment: %v", err)
-			writeError(w, http.StatusInternalServerError, "Failed to persist shipment")
-			return
-		}
+	if err := s.repo.Create(r.Context(), shipment); err != nil {
+		log.Printf("[ERROR] Failed to save shipment: %v", err)
+		writeError(w, http.StatusInternalServerError, "Failed to persist shipment")
+		return
 	}
 
 	// Publish event to NATS JetStream
-	if s.publisher != nil {
-		event := &domain.ShipmentEvent{
-			EventID:        uuid.New().String(),
-			EventType:      "ShipmentCreated",
-			ShipmentID:     shipment.ID,
-			TrackingNumber: shipment.TrackingNumber,
-			Status:         shipment.Status,
-			Timestamp:      time.Now().UTC(),
-			CorrelationID:  correlationID,
-		}
-		if err := s.publisher.PublishShipmentCreated(r.Context(), event); err != nil {
-			log.Printf("[WARN] Failed to publish shipment event: %v", err)
-		}
+	event := &domain.ShipmentEvent{
+		EventID:        uuid.New().String(),
+		EventType:      "ShipmentCreated",
+		ShipmentID:     shipment.ID,
+		TrackingNumber: shipment.TrackingNumber,
+		Status:         shipment.Status,
+		Timestamp:      time.Now().UTC(),
+		CorrelationID:  correlationID,
+	}
+	if err := s.publisher.PublishShipmentCreated(r.Context(), event); err != nil {
+		log.Printf("[ERROR] Failed to publish shipment event: %v", err)
+		writeError(w, http.StatusServiceUnavailable, "Failed to publish shipment event")
+		return
 	}
 
 	metrics.ShipmentsCreatedTotal.WithLabelValues(string(shipment.Status)).Inc()

@@ -1,0 +1,39 @@
+{{- if .Values.observability.serviceMonitor.enabled }}
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: {{ include "kube-delivery.fullname" . }}-shipment-api
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "kube-delivery.labels" . | nindent 4 }}
+    app.kubernetes.io/component: api
+spec:
+  targetLabels:
+    - app.kubernetes.io/component
+  selector:
+    matchLabels:
+      app.kubernetes.io/instance: {{ .Release.Name }}
+      app.kubernetes.io/component: api
+  endpoints:
+    - port: http
+      path: /metrics
+      interval: {{ .Values.observability.serviceMonitor.interval }}
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: {{ include "kube-delivery.fullname" . }}-tracking-worker
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "kube-delivery.labels" . | nindent 4 }}
+    app.kubernetes.io/component: worker
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/instance: {{ .Release.Name }}
+      app.kubernetes.io/component: worker
+  endpoints:
+    - port: metrics
+      path: /metrics
+      interval: {{ .Values.observability.serviceMonitor.interval }}
+{{- end }}

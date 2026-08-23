@@ -18,15 +18,19 @@ spec:
           - resources:
               kinds:
                 - Pod
+              namespaceSelector:
+                matchLabels:
+                  platform.kube-delivery.io/security-profile: restricted
       exclude:
         any:
           - resources:
-              namespaces:
-                - kube-system
+              selector:
+                matchLabels:
+                  app.kubernetes.io/name: postgres
       validate:
         message: "Containers must run with securityContext.readOnlyRootFilesystem=true."
-        pattern:
-          spec:
-            containers:
-              - =(securityContext):
-                  =(readOnlyRootFilesystem): true
+        foreach:
+          - list: request.object.spec.[ephemeralContainers, initContainers, containers][]
+            pattern:
+              securityContext:
+                readOnlyRootFilesystem: true

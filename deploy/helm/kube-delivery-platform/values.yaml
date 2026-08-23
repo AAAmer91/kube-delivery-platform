@@ -23,7 +23,7 @@ securityDefaults:
         - ALL
 
 # ==============================================================================
-# Microservice 1: shipment-api (Go 1.23 REST API)
+# Microservice 1: shipment-api (Go 1.27 REST API)
 # ==============================================================================
 shipmentApi:
   enabled: true
@@ -238,6 +238,11 @@ ingress:
 
 networkPolicy:
   enabled: true
+
+observability:
+  serviceMonitor:
+    enabled: false
+    interval: 15s
 
 resourceQuota:
   enabled: true

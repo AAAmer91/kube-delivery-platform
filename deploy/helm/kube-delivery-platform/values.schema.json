@@ -41,6 +41,22 @@
       }
     },
     "networkPolicy": {"$ref": "#/definitions/toggle"},
+    "observability": {
+      "type": "object",
+      "required": ["serviceMonitor"],
+      "properties": {
+        "serviceMonitor": {
+          "allOf": [
+            {"$ref": "#/definitions/toggle"},
+            {
+              "type": "object",
+              "required": ["interval"],
+              "properties": {"interval": {"type": "string", "minLength": 1}}
+            }
+          ]
+        }
+      }
+    },
     "resourceQuota": {"$ref": "#/definitions/toggle"},
     "limitRange": {"$ref": "#/definitions/toggle"}
   },

@@ -15,9 +15,20 @@ spec:
     - Ingress
     - Egress
   ingress:
-    # Allow HTTP inbound traffic on port 8080 from anywhere (Ingress controller, Prometheus, or other pods)
+    # Allow application traffic only from the ingress controller and metrics collector.
     - from:
-        - namespaceSelector: {}
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: ingress-nginx
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/component: controller
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: monitoring
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/component: helm-test
       ports:
         - protocol: TCP
           port: 8080
