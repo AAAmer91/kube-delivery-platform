@@ -1,0 +1,53 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "kube-delivery.fullname" . }}-shipment-api
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "kube-delivery.labels" . | nindent 4 }}
+    app.kubernetes.io/component: api
+spec:
+  type: {{ .Values.shipmentApi.service.type }}
+  ports:
+    - name: http
+      port: {{ .Values.shipmentApi.service.port }}
+      targetPort: http
+      protocol: TCP
+  selector:
+    {{- include "kube-delivery.shipmentApi.selectorLabels" . | nindent 4 }}
+{{- if .Values.shipmentApi.argoRollouts.enabled }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "kube-delivery.fullname" . }}-shipment-api-canary
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "kube-delivery.labels" . | nindent 4 }}
+    app.kubernetes.io/component: api
+spec:
+  type: ClusterIP
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http
+  selector:
+    {{- include "kube-delivery.shipmentApi.selectorLabels" . | nindent 4 }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "kube-delivery.fullname" . }}-shipment-api-stable
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "kube-delivery.labels" . | nindent 4 }}
+    app.kubernetes.io/component: api
+spec:
+  type: ClusterIP
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http
+  selector:
+    {{- include "kube-delivery.shipmentApi.selectorLabels" . | nindent 4 }}
+{{- end }}

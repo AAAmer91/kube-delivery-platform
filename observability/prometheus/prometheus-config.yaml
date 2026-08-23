@@ -1,0 +1,45 @@
+global:
+  scrape_interval: 10s
+  evaluation_interval: 10s
+
+rule_files:
+  - "/etc/prometheus/alert-rules.yaml"
+
+scrape_configs:
+  - job_name: "shipment-api"
+    kubernetes_sd_configs:
+      - role: pod
+        namespaces:
+          names:
+            - default
+            - preview
+            - staging
+            - production
+    relabel_configs:
+      - source_labels: [__meta_kubernetes_pod_label_app_kubernetes_io_name]
+        action: keep
+        regex: shipment-api
+      - source_labels: [__meta_kubernetes_pod_container_port_number]
+        action: keep
+        regex: "8080"
+
+  - job_name: "tracking-worker"
+    kubernetes_sd_configs:
+      - role: pod
+        namespaces:
+          names:
+            - default
+            - preview
+            - staging
+            - production
+    relabel_configs:
+      - source_labels: [__meta_kubernetes_pod_label_app_kubernetes_io_name]
+        action: keep
+        regex: tracking-worker
+      - source_labels: [__meta_kubernetes_pod_container_port_number]
+        action: keep
+        regex: "9090"
+
+  - job_name: "nats"
+    static_configs:
+      - targets: ["nats:8222"]

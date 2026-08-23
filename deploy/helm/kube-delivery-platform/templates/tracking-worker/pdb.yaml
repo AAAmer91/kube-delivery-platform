@@ -1,0 +1,15 @@
+{{- if and .Values.trackingWorker.enabled .Values.trackingWorker.podDisruptionBudget.enabled }}
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "kube-delivery.fullname" . }}-tracking-worker
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "kube-delivery.labels" . | nindent 4 }}
+    app.kubernetes.io/component: worker
+spec:
+  minAvailable: {{ .Values.trackingWorker.podDisruptionBudget.minAvailable }}
+  selector:
+    matchLabels:
+      {{- include "kube-delivery.trackingWorker.selectorLabels" . | nindent 6 }}
+{{- end }}

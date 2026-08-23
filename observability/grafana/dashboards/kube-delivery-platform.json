@@ -1,0 +1,116 @@
+{
+  "annotations": {
+    "list": []
+  },
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 1,
+  "id": 1,
+  "links": [],
+  "liveNow": false,
+  "panels": [
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 },
+      "id": 1,
+      "title": "Service RED Metrics (Rate, Errors, Duration)",
+      "type": "row"
+    },
+    {
+      "id": 2,
+      "gridPos": { "h": 7, "w": 8, "x": 0, "y": 1 },
+      "title": "HTTP Ingestion Rate (req/sec)",
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "sum(rate(kube_delivery_shipment_api_http_requests_total[1m])) by (method, status)",
+          "legendFormat": "{{method}} - {{status}}"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "gridPos": { "h": 7, "w": 8, "x": 8, "y": 1 },
+      "title": "HTTP Error Rate (%)",
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "sum(rate(kube_delivery_shipment_api_http_requests_total{status=~\"5..\"}[1m])) / sum(rate(kube_delivery_shipment_api_http_requests_total[1m])) * 100",
+          "legendFormat": "5xx Error Rate %"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "gridPos": { "h": 7, "w": 8, "x": 16, "y": 1 },
+      "title": "API Request Latency (p50, p90, p99)",
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.50, sum(rate(kube_delivery_shipment_api_http_request_duration_seconds_bucket[1m])) by (le)) * 1000",
+          "legendFormat": "p50 (ms)"
+        },
+        {
+          "expr": "histogram_quantile(0.90, sum(rate(kube_delivery_shipment_api_http_request_duration_seconds_bucket[1m])) by (le)) * 1000",
+          "legendFormat": "p90 (ms)"
+        },
+        {
+          "expr": "histogram_quantile(0.99, sum(rate(kube_delivery_shipment_api_http_request_duration_seconds_bucket[1m])) by (le)) * 1000",
+          "legendFormat": "p99 (ms)"
+        }
+      ]
+    },
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 8 },
+      "id": 5,
+      "title": "Event Mesh & Worker Processing Metrics",
+      "type": "row"
+    },
+    {
+      "id": 6,
+      "gridPos": { "h": 7, "w": 8, "x": 0, "y": 9 },
+      "title": "Worker Events Processed (events/sec)",
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "sum(rate(kube_delivery_worker_events_processed_total[1m])) by (status)",
+          "legendFormat": "Status: {{status}}"
+        }
+      ]
+    },
+    {
+      "id": 7,
+      "gridPos": { "h": 7, "w": 8, "x": 8, "y": 9 },
+      "title": "Worker Active In-Flight Tasks",
+      "type": "stat",
+      "targets": [
+        {
+          "expr": "sum(kube_delivery_worker_active_tasks)",
+          "legendFormat": "Active Tasks"
+        }
+      ]
+    },
+    {
+      "id": 8,
+      "gridPos": { "h": 7, "w": 8, "x": 16, "y": 9 },
+      "title": "Poison / Quarantined Messages",
+      "type": "stat",
+      "targets": [
+        {
+          "expr": "sum(kube_delivery_worker_poison_messages_total)",
+          "legendFormat": "Total Quarantined"
+        }
+      ]
+    }
+  ],
+  "schemaVersion": 38,
+  "style": "dark",
+  "tags": ["kubernetes", "event-mesh", "kube-delivery", "production"],
+  "time": {
+    "from": "now-15m",
+    "to": "now"
+  },
+  "title": "Kube Delivery Platform - Production Executive Dashboard",
+  "uid": "kube-delivery-prod"
+}

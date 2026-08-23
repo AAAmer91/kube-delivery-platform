@@ -1,0 +1,129 @@
+name: "Ephemeral Kind Cluster Integration & Resilience"
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: e2e-kind-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  kind-integration:
+    name: "Kind Kubernetes Runtime & Chaos Drills"
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@c47758b77c9736f4b2ef4073d4d51994fabfe349 # v3.7.1
+
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+
+      - name: Build Local Test Images
+        run: |
+          docker build -t ghcr.io/aaamer91/shipment-api:test -f services/shipment-api/Dockerfile services/shipment-api
+          docker build -t ghcr.io/aaamer91/tracking-worker:test -f services/tracking-worker/Dockerfile services/tracking-worker
+
+      - name: Setup Kind Platform Cluster
+        uses: ./.github/actions/setup-kind-platform
+        with:
+          cluster_name: "kube-delivery-ci"
+          config_path: "deploy/kind/kind-config.yaml"
+
+      - name: Load Images into Kind Cluster
+        run: |
+          kind load docker-image ghcr.io/aaamer91/shipment-api:test --name kube-delivery-ci
+          kind load docker-image ghcr.io/aaamer91/tracking-worker:test --name kube-delivery-ci
+
+      - name: Deploy Umbrella Helm Chart to Ephemeral Namespace
+        run: |
+          kubectl create namespace delivery-preview
+          DATABASE_PASSWORD="$(openssl rand -hex 24)"
+          kubectl create secret generic kube-delivery-database \
+            --namespace delivery-preview \
+            --from-literal=POSTGRES_PASSWORD="${DATABASE_PASSWORD}" \
+            --from-literal=DATABASE_URL="postgres://postgres:${DATABASE_PASSWORD}@kube-delivery-postgres:5432/delivery_db?sslmode=disable"
+          helm upgrade --install kube-delivery ./deploy/helm/kube-delivery-platform \
+            --namespace delivery-preview \
+            --atomic \
+            --wait \
+            --timeout 5m \
+            --values ./deploy/helm/kube-delivery-platform/values.yaml \
+            --values ./deploy/helm/kube-delivery-platform/values-preview.yaml \
+            --set shipmentApi.image.repository=ghcr.io/aaamer91/shipment-api \
+            --set shipmentApi.image.tag=test \
+            --set trackingWorker.image.repository=ghcr.io/aaamer91/tracking-worker \
+            --set trackingWorker.image.tag=test
+
+      - name: Validate Argo CD Applications Against Installed CRDs
+        run: |
+          kubectl apply --dry-run=server --validate=strict -f deploy/argocd/app-staging.yaml
+          kubectl apply --dry-run=server --validate=strict -f deploy/argocd/app-prod.yaml
+
+      - name: Await Kubernetes Workload Readiness (kubectl wait)
+        run: |
+          echo "⏳ Waiting for PostgreSQL and NATS StatefulSets to be Ready..."
+          kubectl rollout status statefulset/kube-delivery-postgres -n delivery-preview --timeout=180s
+          kubectl rollout status statefulset/kube-delivery-nats -n delivery-preview --timeout=180s
+
+          echo "⏳ Waiting for shipment-api and tracking-worker Deployments..."
+          kubectl rollout status deployment/kube-delivery-shipment-api -n delivery-preview --timeout=180s
+          kubectl rollout status deployment/kube-delivery-tracking-worker -n delivery-preview --timeout=180s
+
+          echo "📋 Pods in delivery-preview namespace:"
+          kubectl get pods -n delivery-preview -o wide
+
+      - name: Execute Helm Test Hooks
+        run: |
+          helm test kube-delivery -n delivery-preview
+
+      - name: Run Chaos & Resilience Drills
+        run: |
+          echo "🔥 Running Chaos Drill 1: Terminating shipment-api pod and verifying self-healing..."
+          API_POD=$(kubectl get pods -n delivery-preview -l app.kubernetes.io/name=shipment-api -o jsonpath='{.items[0].metadata.name}')
+          kubectl delete pod "$API_POD" -n delivery-preview
+          kubectl rollout status deployment/kube-delivery-shipment-api -n delivery-preview --timeout=60s
+
+          echo "🔥 Running Chaos Drill 2: Verifying NetworkPolicy isolation..."
+          POSTGRES_IP=$(kubectl get service kube-delivery-postgres -n delivery-preview -o jsonpath='{.spec.clusterIP}')
+          kubectl run rogue-pod --image=busybox:1.36.1 -n delivery-preview --restart=Never -- sleep 3600
+          kubectl wait --for=condition=Ready pod/rogue-pod -n delivery-preview --timeout=60s
+          # Use the ClusterIP so a denied DNS request cannot masquerade as database isolation.
+          if kubectl exec rogue-pod -n delivery-preview -- nc -zvw 3 "$POSTGRES_IP" 5432; then
+            echo "❌ ERROR: NetworkPolicy failed to block unauthorized database access!"
+            exit 1
+          else
+            echo "✅ NetworkPolicy successfully blocked unauthorized access to database."
+          fi
+          kubectl delete pod rogue-pod -n delivery-preview --force --grace-period=0 || true
+
+      - name: Run Test Suite & Generate Evidence Summary
+        run: |
+          python -m pip install -r services/tracking-worker/dev-requirements.txt
+          python -m pytest tests/resilience -v
+          python scripts/generate_summary.py
+
+      - name: Capture Cluster Diagnostics
+        if: failure()
+        run: |
+          kubectl get nodes -o wide || true
+          kubectl get pods --all-namespaces -o wide || true
+          kubectl get events --all-namespaces --sort-by=.lastTimestamp || true
+          kubectl describe pods -n delivery-preview || true
+
+      - name: Delete Kind Cluster
+        if: always()
+        run: kind delete cluster --name kube-delivery-ci

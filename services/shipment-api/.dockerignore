@@ -1,0 +1,10 @@
+.git
+.gitignore
+*.md
+*_test.go
+.coverage
+.dockerignore
+Dockerfile
+bin/
+tmp/
+.DS_Store

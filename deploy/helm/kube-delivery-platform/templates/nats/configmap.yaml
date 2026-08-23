@@ -1,0 +1,20 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "kube-delivery.fullname" . }}-nats-config
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "kube-delivery.labels" . | nindent 4 }}
+    app.kubernetes.io/component: message-broker
+data:
+  nats.conf: |
+    port: 4222
+    http_port: 8222
+    jetstream: {
+      store_dir: "/data"
+      max_mem: 128MB
+      max_file: 2GB
+    }
+    max_payload: 8MB
+    ping_interval: 15s
+    ping_max: 3

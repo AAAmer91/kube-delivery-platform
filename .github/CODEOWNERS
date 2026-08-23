@@ -1,0 +1,11 @@
+# Global Repository Code Owners
+* @AAAmer91
+
+# Platform & Helm Manifests
+/deploy/ @AAAmer91
+/.github/ @AAAmer91
+/observability/ @AAAmer91
+
+# Services
+/services/shipment-api/ @AAAmer91
+/services/tracking-worker/ @AAAmer91

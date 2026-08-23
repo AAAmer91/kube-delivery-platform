@@ -1,0 +1,100 @@
+{{- if .Values.nats.enabled }}
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ include "kube-delivery.fullname" . }}-nats
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "kube-delivery.labels" . | nindent 4 }}
+    app.kubernetes.io/component: message-broker
+spec:
+  serviceName: {{ include "kube-delivery.fullname" . }}-nats
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "kube-delivery.nats.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "kube-delivery.nats.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/part-of: kube-delivery-platform
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: nats
+          image: "{{ .Values.nats.image.repository }}:{{ .Values.nats.image.tag }}"
+          imagePullPolicy: {{ .Values.nats.image.pullPolicy }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            runAsUser: 10001
+            capabilities:
+              drop:
+                - ALL
+          command:
+            - nats-server
+            - --config
+            - /etc/nats/nats.conf
+          ports:
+            - name: nats
+              containerPort: 4222
+              protocol: TCP
+            - name: monitor
+              containerPort: 8222
+              protocol: TCP
+          livenessProbe:
+            httpGet:
+              path: /varz
+              port: 8222
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            timeoutSeconds: 3
+          readinessProbe:
+            httpGet:
+              path: /varz
+              port: 8222
+            initialDelaySeconds: 3
+            periodSeconds: 5
+            timeoutSeconds: 2
+          resources:
+            {{- toYaml .Values.nats.resources | nindent 12 }}
+          volumeMounts:
+            - name: config
+              mountPath: /etc/nats
+              readOnly: true
+            - name: data
+              mountPath: /data
+            - name: tmp-scratch
+              mountPath: /tmp
+      volumes:
+        - name: config
+          configMap:
+            name: {{ include "kube-delivery.fullname" . }}-nats-config
+        - name: tmp-scratch
+          emptyDir:
+            medium: Memory
+            sizeLimit: 32Mi
+  {{- if and .Values.nats.jetstream.enabled .Values.nats.jetstream.fileStorage }}
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+        labels:
+          {{- include "kube-delivery.labels" . | nindent 10 }}
+      spec:
+        accessModes: [ "ReadWriteOnce" ]
+        resources:
+          requests:
+            storage: {{ .Values.nats.jetstream.fileStorage.size }}
+  {{- else }}
+      volumes:
+        - name: data
+          emptyDir: {}
+  {{- end }}
+{{- end }}

@@ -1,0 +1,15 @@
+{{- if and .Values.shipmentApi.enabled .Values.shipmentApi.podDisruptionBudget.enabled }}
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "kube-delivery.fullname" . }}-shipment-api
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "kube-delivery.labels" . | nindent 4 }}
+    app.kubernetes.io/component: api
+spec:
+  minAvailable: {{ .Values.shipmentApi.podDisruptionBudget.minAvailable }}
+  selector:
+    matchLabels:
+      {{- include "kube-delivery.shipmentApi.selectorLabels" . | nindent 6 }}
+{{- end }}

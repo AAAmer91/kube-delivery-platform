@@ -1,0 +1,39 @@
+version: 2
+updates:
+  # GitHub Actions Workflows
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    groups:
+      actions:
+        patterns: ["*"]
+
+  # Dockerfiles
+  - package-ecosystem: "docker"
+    directory: "/services/shipment-api"
+    schedule:
+      interval: "weekly"
+
+  - package-ecosystem: "docker"
+    directory: "/services/tracking-worker"
+    schedule:
+      interval: "weekly"
+
+  # Go Dependencies
+  - package-ecosystem: "gomod"
+    directory: "/services/shipment-api"
+    schedule:
+      interval: "weekly"
+
+  # Python Dependencies
+  - package-ecosystem: "pip"
+    directory: "/services/tracking-worker"
+    schedule:
+      interval: "weekly"
+
+  # Helm Chart
+  - package-ecosystem: "helm"
+    directory: "/deploy/helm/kube-delivery-platform"
+    schedule:
+      interval: "weekly"

@@ -1,0 +1,50 @@
+groups:
+  - name: kube-delivery-alerts
+    rules:
+      # RED Rule 1: High HTTP Error Rate
+      - alert: HighHttpErrorRate
+        expr: >-
+          sum(rate(kube_delivery_shipment_api_http_requests_total{status=~"5.."}[2m]))
+          /
+          sum(rate(kube_delivery_shipment_api_http_requests_total[2m])) > 0.05
+        for: 1m
+        labels:
+          severity: critical
+          platform: kube-delivery
+        annotations:
+          summary: "High HTTP 5xx error rate on shipment-api (> 5%)"
+          description: "Shipment API error rate is currently at {{ $value | humanizePercentage }}."
+
+      # RED Rule 2: High HTTP Latency (p99)
+      - alert: HighHttpLatencyP99
+        expr: >-
+          histogram_quantile(0.99, sum(rate(kube_delivery_shipment_api_http_request_duration_seconds_bucket[2m])) by (le)) > 0.500
+        for: 2m
+        labels:
+          severity: warning
+          platform: kube-delivery
+        annotations:
+          summary: "High p99 HTTP latency on shipment-api (> 500ms)"
+          description: "Shipment API p99 latency is {{ $value }}s."
+
+      # Worker Rule: Excessive Consumer Lag / Poison Backlog
+      - alert: ExcessiveWorkerPoisonEvents
+        expr: sum(rate(kube_delivery_worker_poison_messages_total[5m])) > 0.1
+        for: 2m
+        labels:
+          severity: warning
+          platform: kube-delivery
+        annotations:
+          summary: "Tracking worker receiving abnormal rate of poison messages"
+          description: "Poison message quarantine rate is {{ $value }} events/sec."
+
+      # Kubernetes Rule: Pod CrashLooping
+      - alert: PodCrashLooping
+        expr: rate(kube_pod_container_status_restarts_total{pod=~".*kube-delivery.*"}[5m]) * 60 > 2
+        for: 2m
+        labels:
+          severity: critical
+          platform: kube-delivery
+        annotations:
+          summary: "Pod {{ $labels.pod }} is crash looping"
+          description: "Pod {{ $labels.pod }} in namespace {{ $labels.namespace }} has restarted multiple times."

@@ -1,0 +1,32 @@
+apiVersion: argoproj.io/v1alpha1
+kind: AnalysisTemplate
+metadata:
+  name: shipment-api-canary-analysis
+  namespace: default
+spec:
+  args:
+    - name: service-name
+    - name: prometheus-server
+      value: http://prometheus-server.monitoring.svc.cluster.local:9090
+  metrics:
+    - name: success-rate
+      interval: 10s
+      successCondition: result[0] <= 0.01
+      failureLimit: 3
+      provider:
+        prometheus:
+          address: "{{ args.prometheus-server }}"
+          query: >-
+            sum(rate(kube_delivery_shipment_api_http_requests_total{status=~"5.."}[1m]))
+            /
+            (sum(rate(kube_delivery_shipment_api_http_requests_total[1m])) > 0 or vector(1))
+
+    - name: latency-p99
+      interval: 10s
+      successCondition: result[0] <= 0.500
+      failureLimit: 3
+      provider:
+        prometheus:
+          address: "{{ args.prometheus-server }}"
+          query: >-
+            histogram_quantile(0.99, sum(rate(kube_delivery_shipment_api_http_request_duration_seconds_bucket[1m])) by (le))

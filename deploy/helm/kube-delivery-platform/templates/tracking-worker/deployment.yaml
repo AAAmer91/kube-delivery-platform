@@ -1,0 +1,84 @@
+{{- if .Values.trackingWorker.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "kube-delivery.fullname" . }}-tracking-worker
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "kube-delivery.labels" . | nindent 4 }}
+    app.kubernetes.io/component: worker
+spec:
+  {{- if not .Values.trackingWorker.autoscaling.enabled }}
+  replicas: {{ .Values.trackingWorker.replicaCount }}
+  {{- end }}
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 25%
+      maxUnavailable: 0
+  selector:
+    matchLabels:
+      {{- include "kube-delivery.trackingWorker.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "kube-delivery.trackingWorker.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/part-of: kube-delivery-platform
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "9090"
+        prometheus.io/path: "/metrics"
+    spec:
+      serviceAccountName: {{ include "kube-delivery.fullname" . }}-tracking-worker
+      terminationGracePeriodSeconds: 30
+      {{- with .Values.securityDefaults.podSecurityContext }}
+      securityContext:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.trackingWorker.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: tracking-worker
+          image: {{ include "kube-delivery.trackingWorker.image" . | quote }}
+          imagePullPolicy: {{ .Values.trackingWorker.image.pullPolicy }}
+          {{- with .Values.securityDefaults.containerSecurityContext }}
+          securityContext:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          ports:
+            - name: health
+              containerPort: 8081
+              protocol: TCP
+            - name: metrics
+              containerPort: 9090
+              protocol: TCP
+          envFrom:
+            - configMapRef:
+                name: {{ include "kube-delivery.fullname" . }}-tracking-worker-config
+            - secretRef:
+                name: {{ .Values.postgres.auth.existingSecret | quote }}
+          {{- with .Values.trackingWorker.probes.startup }}
+          startupProbe:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with .Values.trackingWorker.probes.liveness }}
+          livenessProbe:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with .Values.trackingWorker.probes.readiness }}
+          readinessProbe:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          resources:
+            {{- toYaml .Values.trackingWorker.resources | nindent 12 }}
+          volumeMounts:
+            - name: tmp-scratch
+              mountPath: /tmp
+      volumes:
+        - name: tmp-scratch
+          emptyDir:
+            medium: Memory
+            sizeLimit: 64Mi
+{{- end }}

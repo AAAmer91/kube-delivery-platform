@@ -1,0 +1,173 @@
+name: kube-delivery-platform
+
+services:
+  # ============================================================================
+  # Infrastructure: PostgreSQL 16
+  # ============================================================================
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      POSTGRES_DB: ${POSTGRES_DB:-delivery_db}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./init-db.sql:/docker-entrypoint-initdb.d/init-db.sql:ro
+    networks:
+      - delivery_mesh
+    deploy:
+      resources:
+        limits:
+          cpus: '0.75'
+          memory: 512M
+        reservations:
+          cpus: '0.25'
+          memory: 128M
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-delivery_db}"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+      start_period: 5s
+
+  # ============================================================================
+  # Infrastructure: NATS JetStream 2.10
+  # ============================================================================
+  nats:
+    image: nats:2.10-alpine
+    restart: unless-stopped
+    command: ["-js", "-m", "8222"]
+    ports:
+      - "4222:4222" # NATS client
+      - "8222:8222" # NATS monitoring
+    volumes:
+      - nats_data:/data
+    networks:
+      - delivery_mesh
+    deploy:
+      resources:
+        limits:
+          cpus: '0.50'
+          memory: 256M
+        reservations:
+          cpus: '0.10'
+          memory: 64M
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8222/varz"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+      start_period: 3s
+
+  # ============================================================================
+  # Application: shipment-api (Go 1.23 REST API)
+  # ============================================================================
+  shipment-api:
+    build:
+      context: ../../services/shipment-api
+      dockerfile: Dockerfile
+    image: kube-delivery/shipment-api:local
+    restart: unless-stopped
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=64m
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    environment:
+      PORT: "8080"
+      DATABASE_URL: "postgres://postgres:postgres@postgres:5432/delivery_db?sslmode=disable"
+      NATS_URL: "nats://nats:4222"
+      NATS_STREAM: "DELIVERY_EVENTS"
+      NATS_SUBJECT: "delivery.shipments.created"
+      ENVIRONMENT: "local"
+      LOG_LEVEL: "info"
+    ports:
+      - "8080:8080"
+    networks:
+      - delivery_mesh
+    depends_on:
+      postgres:
+        condition: service_healthy
+      nats:
+        condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          cpus: '0.50'
+          memory: 256M
+        reservations:
+          cpus: '0.10'
+          memory: 64M
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/healthz"]
+      interval: 5s
+      timeout: 3s
+      retries: 3
+      start_period: 5s
+
+  # ============================================================================
+  # Application: tracking-worker (Python 3.12 Event Processor)
+  # ============================================================================
+  tracking-worker:
+    build:
+      context: ../../services/tracking-worker
+      dockerfile: Dockerfile
+    image: kube-delivery/tracking-worker:local
+    restart: unless-stopped
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=64m
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    environment:
+      PORT: "8081"
+      METRICS_PORT: "9090"
+      DATABASE_URL: "postgres://postgres:postgres@postgres:5432/delivery_db"
+      NATS_URL: "nats://nats:4222"
+      NATS_STREAM: "DELIVERY_EVENTS"
+      NATS_SUBJECT: "delivery.shipments.created"
+      NATS_CONSUMER_GROUP: "tracking-workers"
+      ENVIRONMENT: "local"
+      SIMULATION_STEP_DELAY_SEC: "0.2"
+    ports:
+      - "8081:8081" # Health probe
+      - "9090:9090" # Prometheus metrics
+    networks:
+      - delivery_mesh
+    depends_on:
+      postgres:
+        condition: service_healthy
+      nats:
+        condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          cpus: '0.50'
+          memory: 256M
+        reservations:
+          cpus: '0.10'
+          memory: 64M
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8081/healthz"]
+      interval: 5s
+      timeout: 3s
+      retries: 3
+      start_period: 5s
+
+networks:
+  delivery_mesh:
+    name: kube_delivery_mesh
+    driver: bridge
+
+volumes:
+  postgres_data:
+    name: kube_delivery_postgres_data
+  nats_data:
+    name: kube_delivery_nats_data

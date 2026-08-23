@@ -1,0 +1,258 @@
+global:
+  environment: local
+  domain: delivery.local
+  imageRegistry: ghcr.io/aaamer91
+
+# Security context defaults applied across microservices
+securityDefaults:
+  podSecurityContext:
+    runAsNonRoot: true
+    runAsUser: 10001
+    runAsGroup: 10001
+    fsGroup: 10001
+    seccompProfile:
+      type: RuntimeDefault
+  containerSecurityContext:
+    allowPrivilegeEscalation: false
+    readOnlyRootFilesystem: true
+    runAsNonRoot: true
+    runAsUser: 10001
+    runAsGroup: 10001
+    capabilities:
+      drop:
+        - ALL
+
+# ==============================================================================
+# Microservice 1: shipment-api (Go 1.23 REST API)
+# ==============================================================================
+shipmentApi:
+  enabled: true
+  replicaCount: 2
+  image:
+    repository: ghcr.io/aaamer91/shipment-api
+    tag: "1.0.0"
+    digest: ""
+    pullPolicy: IfNotPresent
+  service:
+    type: ClusterIP
+    port: 8080
+    metricsPort: 8080
+  env:
+    PORT: "8080"
+    LOG_LEVEL: "info"
+    SHUTDOWN_TIMEOUT_SECONDS: "10"
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      cpu: 250m
+      memory: 128Mi
+  autoscaling:
+    enabled: true
+    minReplicas: 2
+    maxReplicas: 10
+    targetCPUUtilizationPercentage: 70
+    targetMemoryUtilizationPercentage: 80
+  podDisruptionBudget:
+    enabled: true
+    minAvailable: 1
+  affinity:
+    podAntiAffinity:
+      preferredDuringSchedulingIgnoredDuringExecution:
+        - weight: 100
+          podAffinityTerm:
+            labelSelector:
+              matchLabels:
+                app.kubernetes.io/name: shipment-api
+            topologyKey: kubernetes.io/hostname
+  topologySpreadConstraints:
+    - maxSkew: 1
+      topologyKey: topology.kubernetes.io/zone
+      whenUnsatisfiable: ScheduleAnyway
+      labelSelector:
+        matchLabels:
+          app.kubernetes.io/name: shipment-api
+  probes:
+    startup:
+      httpGet:
+        path: /healthz
+        port: 8080
+      initialDelaySeconds: 2
+      periodSeconds: 3
+      failureThreshold: 10
+    liveness:
+      httpGet:
+        path: /healthz
+        port: 8080
+      periodSeconds: 10
+      timeoutSeconds: 3
+      failureThreshold: 3
+    readiness:
+      httpGet:
+        path: /ready
+        port: 8080
+      periodSeconds: 5
+      timeoutSeconds: 3
+      failureThreshold: 2
+  argoRollouts:
+    enabled: false # Enabled in staging/prod values for canary progressive delivery
+
+# ==============================================================================
+# Microservice 2: tracking-worker (Python 3.12 Event Processor)
+# ==============================================================================
+trackingWorker:
+  enabled: true
+  replicaCount: 2
+  image:
+    repository: ghcr.io/aaamer91/tracking-worker
+    tag: "1.0.0"
+    digest: ""
+    pullPolicy: IfNotPresent
+  service:
+    type: ClusterIP
+    port: 8081
+    metricsPort: 9090
+  env:
+    PORT: "8081"
+    METRICS_PORT: "9090"
+    SIMULATION_STEP_DELAY_SEC: "0.2"
+  resources:
+    requests:
+      cpu: 50m
+      memory: 128Mi
+    limits:
+      cpu: 300m
+      memory: 256Mi
+  autoscaling:
+    enabled: true
+    minReplicas: 2
+    maxReplicas: 8
+    targetCPUUtilizationPercentage: 75
+  podDisruptionBudget:
+    enabled: true
+    minAvailable: 1
+  affinity:
+    podAntiAffinity:
+      preferredDuringSchedulingIgnoredDuringExecution:
+        - weight: 100
+          podAffinityTerm:
+            labelSelector:
+              matchLabels:
+                app.kubernetes.io/name: tracking-worker
+            topologyKey: kubernetes.io/hostname
+  probes:
+    startup:
+      httpGet:
+        path: /healthz
+        port: 8081
+      initialDelaySeconds: 3
+      periodSeconds: 3
+      failureThreshold: 10
+    liveness:
+      httpGet:
+        path: /healthz
+        port: 8081
+      periodSeconds: 10
+      timeoutSeconds: 3
+    readiness:
+      httpGet:
+        path: /ready
+        port: 8081
+      periodSeconds: 5
+      timeoutSeconds: 3
+
+# ==============================================================================
+# Dependency: PostgreSQL Database
+# ==============================================================================
+postgres:
+  enabled: true
+  image:
+    repository: postgres
+    tag: "16-alpine"
+    pullPolicy: IfNotPresent
+  auth:
+    database: delivery_db
+    username: postgres
+    # Provision this Secret outside Helm (External Secrets, SOPS, or kubectl).
+    # It must contain POSTGRES_PASSWORD and DATABASE_URL keys.
+    existingSecret: kube-delivery-database
+    passwordKey: POSTGRES_PASSWORD
+    databaseUrlKey: DATABASE_URL
+  persistence:
+    enabled: true
+    size: 2Gi
+    storageClass: ""
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+
+# ==============================================================================
+# Dependency: NATS JetStream
+# ==============================================================================
+nats:
+  enabled: true
+  image:
+    repository: nats
+    tag: "2.10-alpine"
+    pullPolicy: IfNotPresent
+  jetstream:
+    enabled: true
+    fileStorage:
+      size: 2Gi
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      cpu: 250m
+      memory: 256Mi
+
+# ==============================================================================
+# Ingress & Governance
+# ==============================================================================
+ingress:
+  enabled: true
+  className: nginx
+  annotations:
+    nginx.ingress.kubernetes.io/ssl-redirect: "false"
+  hosts:
+    - host: delivery.local
+      paths:
+        - path: /api/v1/shipments
+          pathType: Prefix
+          service: shipment-api
+          port: 8080
+        - path: /healthz
+          pathType: Exact
+          service: shipment-api
+          port: 8080
+        - path: /ready
+          pathType: Exact
+          service: shipment-api
+          port: 8080
+
+networkPolicy:
+  enabled: true
+
+resourceQuota:
+  enabled: true
+  hard:
+    pods: "30"
+    requests.cpu: "2"
+    requests.memory: 2Gi
+    limits.cpu: "4"
+    limits.memory: 4Gi
+
+limitRange:
+  enabled: true
+  default:
+    cpu: 300m
+    memory: 256Mi
+  defaultRequest:
+    cpu: 50m
+    memory: 64Mi

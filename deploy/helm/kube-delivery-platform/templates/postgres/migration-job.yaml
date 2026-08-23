@@ -1,0 +1,90 @@
+{{- if .Values.postgres.enabled }}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "kube-delivery.fullname" . }}-db-migration-{{ .Release.Revision }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "kube-delivery.labels" . | nindent 4 }}
+    app.kubernetes.io/component: migration-job
+  annotations:
+    "helm.sh/hook": post-install,post-upgrade
+    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+    "helm.sh/hook-weight": "1"
+spec:
+  ttlSecondsAfterFinished: 300
+  backoffLimit: 5
+  template:
+    metadata:
+      labels:
+        {{- include "kube-delivery.labels" . | nindent 8 }}
+        app.kubernetes.io/component: migration-job
+    spec:
+      restartPolicy: OnFailure
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: migrate
+          image: "{{ .Values.postgres.image.repository }}:{{ .Values.postgres.image.tag }}"
+          imagePullPolicy: {{ .Values.postgres.image.pullPolicy }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            runAsUser: 10001
+            capabilities:
+              drop:
+                - ALL
+          env:
+            - name: PGPASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.postgres.auth.existingSecret | quote }}
+                  key: {{ .Values.postgres.auth.passwordKey | quote }}
+          command:
+            - /bin/sh
+            - -c
+            - |
+              echo "Waiting for PostgreSQL database to be ready..."
+              until pg_isready -h {{ include "kube-delivery.fullname" . }}-postgres -p 5432 -U {{ .Values.postgres.auth.username }} -d {{ .Values.postgres.auth.database }}; do
+                sleep 2
+              done
+              echo "Executing idempotent schema migrations..."
+              psql -h {{ include "kube-delivery.fullname" . }}-postgres -p 5432 -U {{ .Values.postgres.auth.username }} -d {{ .Values.postgres.auth.database }} << 'EOF'
+              CREATE TABLE IF NOT EXISTS shipments (
+                  id VARCHAR(64) PRIMARY KEY,
+                  tracking_number VARCHAR(64) UNIQUE NOT NULL,
+                  sender_name VARCHAR(255) NOT NULL,
+                  recipient_name VARCHAR(255) NOT NULL,
+                  origin VARCHAR(255) NOT NULL,
+                  destination VARCHAR(255) NOT NULL,
+                  status VARCHAR(64) NOT NULL,
+                  weight_kg NUMERIC(8, 2) NOT NULL,
+                  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+              );
+
+              CREATE INDEX IF NOT EXISTS idx_shipments_tracking_number ON shipments(tracking_number);
+              CREATE INDEX IF NOT EXISTS idx_shipments_status ON shipments(status);
+              EOF
+              echo "Database schema migration finished successfully."
+          resources:
+            requests:
+              cpu: 20m
+              memory: 32Mi
+            limits:
+              cpu: 100m
+              memory: 64Mi
+          volumeMounts:
+            - name: tmp-scratch
+              mountPath: /tmp
+      volumes:
+        - name: tmp-scratch
+          emptyDir:
+            medium: Memory
+            sizeLimit: 32Mi
+{{- end }}

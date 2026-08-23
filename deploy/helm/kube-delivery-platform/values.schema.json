@@ -1,0 +1,115 @@
+{
+  "$schema": "https://json-schema.org/draft-07/schema#",
+  "title": "Kube Delivery Platform Helm values",
+  "type": "object",
+  "required": [
+    "global",
+    "securityDefaults",
+    "shipmentApi",
+    "trackingWorker",
+    "postgres",
+    "nats"
+  ],
+  "properties": {
+    "global": {
+      "type": "object",
+      "required": ["environment", "domain", "imageRegistry"],
+      "properties": {
+        "environment": {
+          "type": "string",
+          "enum": ["local", "preview", "staging", "production"]
+        },
+        "domain": {"type": "string", "minLength": 1},
+        "imageRegistry": {"type": "string", "minLength": 1}
+      }
+    },
+    "securityDefaults": {
+      "type": "object",
+      "required": ["podSecurityContext", "containerSecurityContext"]
+    },
+    "shipmentApi": {"$ref": "#/definitions/application"},
+    "trackingWorker": {"$ref": "#/definitions/application"},
+    "postgres": {"$ref": "#/definitions/dependency"},
+    "nats": {"$ref": "#/definitions/dependency"},
+    "ingress": {
+      "type": "object",
+      "required": ["enabled", "className", "hosts"],
+      "properties": {
+        "enabled": {"type": "boolean"},
+        "className": {"type": "string", "minLength": 1},
+        "hosts": {"type": "array", "minItems": 1}
+      }
+    },
+    "networkPolicy": {"$ref": "#/definitions/toggle"},
+    "resourceQuota": {"$ref": "#/definitions/toggle"},
+    "limitRange": {"$ref": "#/definitions/toggle"}
+  },
+  "definitions": {
+    "image": {
+      "type": "object",
+      "required": ["repository", "tag", "digest", "pullPolicy"],
+      "properties": {
+        "repository": {"type": "string", "minLength": 1},
+        "tag": {"type": "string", "minLength": 1},
+        "digest": {
+          "type": "string",
+          "pattern": "^$|^sha256:[a-f0-9]{64}$"
+        },
+        "pullPolicy": {
+          "type": "string",
+          "enum": ["Always", "IfNotPresent", "Never"]
+        }
+      }
+    },
+    "resources": {
+      "type": "object",
+      "required": ["requests", "limits"],
+      "properties": {
+        "requests": {
+          "type": "object",
+          "required": ["cpu", "memory"]
+        },
+        "limits": {
+          "type": "object",
+          "required": ["cpu", "memory"]
+        }
+      }
+    },
+    "application": {
+      "type": "object",
+      "required": ["enabled", "replicaCount", "image", "resources"],
+      "properties": {
+        "enabled": {"type": "boolean"},
+        "replicaCount": {"type": "integer", "minimum": 1},
+        "image": {"$ref": "#/definitions/image"},
+        "resources": {"$ref": "#/definitions/resources"},
+        "autoscaling": {
+          "type": "object",
+          "required": ["enabled", "minReplicas", "maxReplicas"],
+          "properties": {
+            "enabled": {"type": "boolean"},
+            "minReplicas": {"type": "integer", "minimum": 1},
+            "maxReplicas": {"type": "integer", "minimum": 1}
+          }
+        }
+      }
+    },
+    "dependency": {
+      "type": "object",
+      "required": ["enabled", "image", "resources"],
+      "properties": {
+        "enabled": {"type": "boolean"},
+        "image": {
+          "type": "object",
+          "required": ["repository", "tag", "pullPolicy"]
+        },
+        "resources": {"$ref": "#/definitions/resources"}
+      }
+    },
+    "toggle": {
+      "type": "object",
+      "required": ["enabled"],
+      "properties": {"enabled": {"type": "boolean"}}
+    }
+  }
+}

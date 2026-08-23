@@ -1,0 +1,30 @@
+[project]
+name = "kube-delivery-platform"
+version = "1.0.0"
+description = "Cloud-Native Docker, Kubernetes, and GitOps Platform"
+readme = "README.md"
+requires-python = ">=3.11"
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["services/tracking-worker/tests", "tests"]
+python_files = ["test_*.py"]
+pythonpath = ["services/tracking-worker", "services/tracking-worker/src", "."]
+markers = [
+    "e2e: marks tests as end-to-end against live endpoints",
+]
+
+
+[tool.ruff]
+target-version = "py312"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B", "PL"]
+ignore = ["E501", "PLW0603", "PLR0913", "PLR2004"]
+
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+ignore_missing_imports = true

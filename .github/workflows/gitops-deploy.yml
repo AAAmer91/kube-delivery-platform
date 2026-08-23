@@ -1,0 +1,104 @@
+name: "GitOps Progressive Delivery & Promotion"
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: "Target deployment environment"
+        required: true
+        default: "staging"
+        type: choice
+        options:
+          - staging
+          - production
+      shipment_api_digest:
+        description: "shipment-api digest (sha256:...)"
+        required: true
+        type: string
+      tracking_worker_digest:
+        description: "tracking-worker digest (sha256:...)"
+        required: true
+        type: string
+
+permissions:
+  contents: write
+  deployments: write
+  pull-requests: write
+
+concurrency:
+  group: gitops-promote-${{ inputs.environment }}
+  cancel-in-progress: false
+
+jobs:
+  promote-gitops-state:
+    name: "Promote Environment State via GitOps"
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.environment }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Validate immutable image digests
+        env:
+          SHIPMENT_API_DIGEST: ${{ inputs.shipment_api_digest }}
+          TRACKING_WORKER_DIGEST: ${{ inputs.tracking_worker_digest }}
+        run: |
+          digest_pattern='^sha256:[a-f0-9]{64}$'
+          [[ "${SHIPMENT_API_DIGEST}" =~ ${digest_pattern} ]]
+          [[ "${TRACKING_WORKER_DIGEST}" =~ ${digest_pattern} ]]
+
+      - name: Update only application image digests
+        env:
+          VALUES_FILE: ${{ inputs.environment == 'production' && 'deploy/helm/kube-delivery-platform/values-prod.yaml' || 'deploy/helm/kube-delivery-platform/values-staging.yaml' }}
+          SHIPMENT_API_DIGEST: ${{ inputs.shipment_api_digest }}
+          TRACKING_WORKER_DIGEST: ${{ inputs.tracking_worker_digest }}
+        run: |
+          python -m pip install --disable-pip-version-check pyyaml==6.0.3
+          python - <<'PY'
+          import os
+          from pathlib import Path
+
+          import yaml
+
+          path = Path(os.environ["VALUES_FILE"])
+          values = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+          values.setdefault("shipmentApi", {}).setdefault("image", {})["digest"] = os.environ["SHIPMENT_API_DIGEST"]
+          values.setdefault("trackingWorker", {}).setdefault("image", {})["digest"] = os.environ["TRACKING_WORKER_DIGEST"]
+          path.write_text(yaml.safe_dump(values, sort_keys=False), encoding="utf-8")
+          PY
+
+      - name: Validate rendered GitOps state
+        uses: azure/setup-helm@fe7b79cd5ee101d5da0498030407de609044467a # v4.2.0
+        with:
+          version: "v3.16.2"
+
+      - name: Render promoted Helm release
+        env:
+          VALUES_FILE: ${{ inputs.environment == 'production' && 'deploy/helm/kube-delivery-platform/values-prod.yaml' || 'deploy/helm/kube-delivery-platform/values-staging.yaml' }}
+        run: helm template promotion deploy/helm/kube-delivery-platform --values "${VALUES_FILE}" > /dev/null
+
+      - name: Open auditable promotion pull request
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ENVIRONMENT_NAME: ${{ inputs.environment }}
+          VALUES_FILE: ${{ inputs.environment == 'production' && 'deploy/helm/kube-delivery-platform/values-prod.yaml' || 'deploy/helm/kube-delivery-platform/values-staging.yaml' }}
+        run: |
+          branch="gitops/promote-${ENVIRONMENT_NAME}-${GITHUB_RUN_ID}"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git switch -c "${branch}"
+          git add "${VALUES_FILE}"
+          git commit -m "chore(gitops): promote ${ENVIRONMENT_NAME} image digests"
+          git push "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" "HEAD:${branch}"
+          gh pr create \
+            --base main \
+            --head "${branch}" \
+            --title "chore(gitops): promote ${ENVIRONMENT_NAME}" \
+            --body "Promotes signed application image digests through the protected GitOps path."
+
+      - name: Verify GitOps Reconcile Readiness
+        run: |
+          echo "GitOps promotion PR opened for ${{ inputs.environment }}."
+          echo "Argo CD will reconcile only after the audited desired-state change is merged."

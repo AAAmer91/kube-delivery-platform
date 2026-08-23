@@ -1,0 +1,102 @@
+name: "Setup Kind Platform Controllers"
+description: "Provisions a pinned multi-node Kind cluster and installs ingress-nginx, Argo Rollouts, and Argo CD."
+
+inputs:
+  cluster_name:
+    description: "Name of the Kind cluster"
+    required: false
+    default: "kube-delivery-cluster"
+  config_path:
+    description: "Path to kind-config.yaml"
+    required: false
+    default: "deploy/kind/kind-config.yaml"
+  kind_version:
+    description: "Pinned Kind CLI version"
+    required: false
+    default: "v0.32.0"
+  kubectl_version:
+    description: "Pinned kubectl version"
+    required: false
+    default: "v1.35.0"
+  ingress_nginx_version:
+    description: "Pinned ingress-nginx release"
+    required: false
+    default: "controller-v1.15.1"
+  argo_rollouts_version:
+    description: "Pinned Argo Rollouts release"
+    required: false
+    default: "v1.9.1"
+  argo_cd_version:
+    description: "Pinned Argo CD release"
+    required: false
+    default: "v3.5.1"
+
+runs:
+  using: "composite"
+  steps:
+    - name: Install Kind
+      uses: helm/kind-action@ef37e7f390d99f746eb8b610417061a60e82a6cc # v1.14.0
+      with:
+        version: ${{ inputs.kind_version }}
+        kubectl_version: ${{ inputs.kubectl_version }}
+        install_only: true
+
+    - name: Set up kubectl
+      uses: azure/setup-kubectl@829323503d1be3d00ca8346e5391ca0b07a9ab0d # v5.1.0
+      with:
+        version: ${{ inputs.kubectl_version }}
+
+    - name: Set up Helm
+      uses: azure/setup-helm@fe7b79cd5ee101d5da0498030407de609044467a # v4.2.0
+      with:
+        version: "v3.16.2"
+
+    - name: Create Kind Cluster
+      shell: bash
+      run: |
+        echo "🚀 Creating Kind cluster '${{ inputs.cluster_name }}'..."
+        kind create cluster --name "${{ inputs.cluster_name }}" --config "${{ inputs.config_path }}"
+        kubectl cluster-info
+
+    - name: Wait for Cluster Nodes to be Ready
+      shell: bash
+      run: |
+        echo "⏳ Waiting for cluster nodes to reach Ready state..."
+        kubectl wait --for=condition=Ready nodes --all --timeout=120s
+
+    - name: Install Ingress NGINX Controller
+      shell: bash
+      run: |
+        echo "🌐 Installing Ingress NGINX Controller for Kind..."
+        kubectl apply -f "https://raw.githubusercontent.com/kubernetes/ingress-nginx/${{ inputs.ingress_nginx_version }}/deploy/static/provider/kind/deploy.yaml"
+        echo "⏳ Waiting for ingress-nginx controller pod to be ready..."
+        kubectl wait --namespace ingress-nginx \
+          --for=condition=ready pod \
+          --selector=app.kubernetes.io/component=controller \
+          --timeout=180s
+
+    - name: Install Argo Rollouts Controller
+      shell: bash
+      run: |
+        echo "🎯 Installing Argo Rollouts Controller..."
+        kubectl create namespace argo-rollouts || true
+        kubectl apply -n argo-rollouts -f "https://github.com/argoproj/argo-rollouts/releases/download/${{ inputs.argo_rollouts_version }}/install.yaml"
+        echo "⏳ Waiting for argo-rollouts controller pod to be ready..."
+        kubectl wait --namespace argo-rollouts \
+          --for=condition=ready pod \
+          --selector=app.kubernetes.io/name=argo-rollouts \
+          --timeout=180s
+
+    - name: Install Argo CD
+      shell: bash
+      run: |
+        echo "Installing Argo CD ${{ inputs.argo_cd_version }}..."
+        kubectl create namespace argocd
+        kubectl apply -n argocd -f "https://raw.githubusercontent.com/argoproj/argo-cd/${{ inputs.argo_cd_version }}/manifests/install.yaml"
+        kubectl wait --namespace argocd \
+          --for=condition=available deployment \
+          --selector=app.kubernetes.io/part-of=argocd \
+          --timeout=300s
+        kubectl rollout status statefulset/argocd-application-controller \
+          --namespace argocd \
+          --timeout=300s
