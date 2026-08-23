@@ -92,7 +92,11 @@ runs:
       run: |
         echo "Installing Argo CD ${{ inputs.argo_cd_version }}..."
         kubectl create namespace argocd
-        kubectl apply -n argocd -f "https://raw.githubusercontent.com/argoproj/argo-cd/${{ inputs.argo_cd_version }}/manifests/install.yaml"
+        # Server-side apply avoids the 256 KiB last-applied annotation limit on
+        # Argo CD's large ApplicationSet CRD.
+        kubectl apply --server-side --field-manager=kube-delivery-ci \
+          -n argocd \
+          -f "https://raw.githubusercontent.com/argoproj/argo-cd/${{ inputs.argo_cd_version }}/manifests/install.yaml"
         kubectl wait --namespace argocd \
           --for=condition=available deployment \
           --selector=app.kubernetes.io/part-of=argocd \
