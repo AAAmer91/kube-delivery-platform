@@ -5,6 +5,9 @@ FROM python:3.12-slim-bookworm AS builder
 
 WORKDIR /build
 
+# Package patch versions intentionally follow the pinned Bookworm base image;
+# every build is vulnerability-scanned before publication.
+# hadolint ignore=DL3008
 RUN apt-get update && \
     apt-get install -y --no-install-recommends gcc libpq-dev python3-dev && \
     rm -rf /var/lib/apt/lists/*
@@ -19,6 +22,9 @@ RUN --mount=type=cache,target=/root/.cache/pip \
 FROM python:3.12-slim-bookworm AS runtime
 
 # Install minimal runtime shared libraries (libpq)
+# Package patch versions intentionally follow the pinned Bookworm base image;
+# every build is vulnerability-scanned before publication.
+# hadolint ignore=DL3008
 RUN apt-get update && \
     apt-get install -y --no-install-recommends libpq5 curl && \
     rm -rf /var/lib/apt/lists/*
@@ -59,6 +65,6 @@ EXPOSE 8081 9090
 
 # Container Healthcheck (Readiness endpoint)
 HEALTHCHECK --interval=10s --timeout=3s --start-period=5s --retries=3 \
-    CMD curl -f http://localhost:8081/healthz || exit 1
+    CMD ["curl", "--fail", "http://localhost:8081/healthz"]
 
 ENTRYPOINT ["python", "-m", "src.main"]
