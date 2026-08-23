@@ -1,7 +1,6 @@
 global:
   environment: staging
   domain: staging.delivery.internal
-
 shipmentApi:
   replicaCount: 2
   autoscaling:
@@ -9,24 +8,24 @@ shipmentApi:
     minReplicas: 2
     maxReplicas: 5
   argoRollouts:
-    enabled: true # Uses Argo Rollouts canary progressive delivery
-
+    enabled: true
+  image:
+    digest: sha256:94dc95dd33820d45007592dba06163ff14ed61586a872f5a20613625223c03b2
 trackingWorker:
   replicaCount: 2
   autoscaling:
     enabled: true
     minReplicas: 2
     maxReplicas: 4
-
+  image:
+    digest: sha256:cabbad117c4974eab2a6f42405d721aad550ee507e7602d507dacf264904695c
 observability:
   serviceMonitor:
     enabled: true
-
 postgres:
   persistence:
     enabled: true
     size: 5Gi
-
 nats:
   jetstream:
     fileStorage:
