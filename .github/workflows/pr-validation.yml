@@ -68,9 +68,15 @@ jobs:
         run: |
           python -m mypy services/tracking-worker/src
 
-      - name: Run Python Unit & Contract Tests
+      - name: Run Python Unit Tests with Coverage
         run: |
-          python -m pytest services/tracking-worker/tests tests/contract tests/integration -v --cov=services/tracking-worker/src
+          python -m pytest services/tracking-worker/tests -v --cov=services/tracking-worker/src
+
+      - name: Run Contract Tests
+        run: python -m pytest tests/contract -v
+
+      - name: Run Integration Tests
+        run: python -m pytest tests/integration -v
 
   # ============================================================================
   # Quality Gate 3: Dockerfile Security & Best Practices (Hadolint)

@@ -99,3 +99,14 @@ def test_bot_created_promotion_pr_dispatches_every_required_validation_workflow(
         assert f'gh workflow run "{workflow}" --ref "${{PROMOTION_BRANCH}}"' in dispatch_step["run"]
 
     assert "workflow_dispatch" in security["on"]
+
+
+def test_python_quality_gate_reports_unit_contract_and_integration_failures_separately() -> None:
+    validation = _workflow("pr-validation.yml")
+    steps = validation["jobs"]["test-tracking-worker"]["steps"]
+    commands = {step["name"]: step.get("run", "") for step in steps}
+
+    assert "services/tracking-worker/tests" in commands["Run Python Unit Tests with Coverage"]
+    assert "--cov=services/tracking-worker/src" in commands["Run Python Unit Tests with Coverage"]
+    assert "tests/contract" in commands["Run Contract Tests"]
+    assert "tests/integration" in commands["Run Integration Tests"]
