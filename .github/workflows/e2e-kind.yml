@@ -222,12 +222,19 @@ jobs:
 
       - name: Prove Kyverno Validates Init Containers
         run: |
+          # Use a clean namespace: the application namespace's LimitRange fills
+          # missing resources before validating admission webhooks can reject them.
+          kubectl create namespace policy-validation
+          kubectl label namespace policy-validation \
+            platform.kube-delivery.io/security-profile=restricted \
+            pod-security.kubernetes.io/enforce=restricted \
+            pod-security.kubernetes.io/enforce-version=latest
           if kubectl apply --dry-run=server -f - > policy-denial.log 2>&1 <<'EOF'
           apiVersion: v1
           kind: Pod
           metadata:
             name: policy-violation
-            namespace: delivery-preview
+            namespace: policy-validation
           spec:
             restartPolicy: Never
             securityContext:
