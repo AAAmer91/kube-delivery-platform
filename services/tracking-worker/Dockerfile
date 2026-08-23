@@ -1,7 +1,7 @@
 # ==============================================================================
 # Build Stage: Compile dependencies in isolated builder container
 # ==============================================================================
-FROM python:3.12-slim-bookworm AS builder
+FROM python:3.14-slim-bookworm AS builder
 
 WORKDIR /build
 
@@ -22,7 +22,7 @@ RUN --mount=type=cache,target=/root/.cache/pip \
 # ==============================================================================
 # Runtime Stage: Minimal, unprivileged non-root Python runtime
 # ==============================================================================
-FROM python:3.12-slim-bookworm AS runtime
+FROM python:3.14-slim-bookworm AS runtime
 
 # Install minimal runtime shared libraries (libpq)
 # Package patch versions intentionally follow the pinned Bookworm base image;
