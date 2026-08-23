@@ -70,7 +70,7 @@ jobs:
           PY
 
       - name: Validate rendered GitOps state
-        uses: azure/setup-helm@fe7b79cd5ee101d5da0498030407de609044467a # v4.2.0
+        uses: azure/setup-helm@bf6a7d304bc2fdb57e0331155b7ebf2c504acf0a # v4
         with:
           version: "v3.16.2"
 

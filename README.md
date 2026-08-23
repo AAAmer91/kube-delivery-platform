@@ -20,7 +20,7 @@ flowchart TD
 
     subgraph ClusterMesh ["📦 Kubernetes Cluster (Namespace: delivery)"]
         subgraph Compute ["Compute Workloads"]
-            API["shipment-api (Go 1.23)<br/>2 Replicas | HPA (70%) | Non-Root (UID 10001)<br/>Read-Only RootFS | PDB (minAvailable: 1)"]
+            API["shipment-api (Go 1.27)<br/>2 Replicas | HPA (70%) | Non-Root (UID 10001)<br/>Read-Only RootFS | PDB (minAvailable: 1)"]
             Worker["tracking-worker (Python 3.12)<br/>2 Replicas | HPA (75%) | Non-Root (UID 10001)<br/>Async Lifecycle Engine"]
         end
 
@@ -68,7 +68,7 @@ flowchart TD
 
 ```text
 ├── services/
-│   ├── shipment-api/                  # Go 1.23 REST API Service
+│   ├── shipment-api/                  # Go 1.27 REST API Service
 │   └── tracking-worker/               # Python 3.12 Event Processor Service
 ├── deploy/
 │   ├── compose/                       # Local Dev Docker Compose & DB Schema

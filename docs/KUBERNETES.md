@@ -8,7 +8,7 @@ The **Kube Delivery Platform** is deployed using a single umbrella Helm chart (`
 
 ```mermaid
 graph TD
-    Ingress["Ingress NGINX (80/443)"] -->|/api/v1/shipments| API["shipment-api (Go 1.23)"]
+    Ingress["Ingress NGINX (80/443)"] -->|/api/v1/shipments| API["shipment-api (Go 1.27)"]
     API -->|Publish Events| NATS["NATS JetStream (4222)"]
     API -->|Persist Orders| DB[("PostgreSQL 16 (5432)")]
     NATS -->|Consumer Group| Worker["tracking-worker (Python 3.12)"]

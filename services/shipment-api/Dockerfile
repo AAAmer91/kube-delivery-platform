@@ -1,7 +1,7 @@
 # ==============================================================================
 # Build Stage: Multi-stage Go static binary builder with BuildKit cache mounts
 # ==============================================================================
-FROM --platform=$BUILDPLATFORM golang:1.23-alpine3.20 AS builder
+FROM --platform=$BUILDPLATFORM golang:1.27.0-alpine3.24 AS builder
 
 # Install build dependencies
 RUN apk add --no-cache git ca-certificates tzdata
@@ -31,7 +31,7 @@ RUN --mount=type=cache,target=/go/pkg/mod \
 # ==============================================================================
 # Runtime Stage: Minimal, unprivileged non-root image (Read-only root compatible)
 # ==============================================================================
-FROM alpine:3.20.3 AS runtime
+FROM alpine:3.24.1 AS runtime
 
 # Create dedicated non-root application user and group (UID/GID 10001)
 RUN addgroup -g 10001 -S appgroup && \

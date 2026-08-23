@@ -7,9 +7,9 @@ The **Kube Delivery Platform** implements enterprise-grade container engineering
 ## 🔒 Security Best Practices Implemented
 
 ### 1. Multi-Stage Builds & Minimal Runtime Images
-* **`shipment-api` (Go 1.23):**
-  - **Stage 1 (Builder):** Uses `golang:1.23-alpine3.20` with BuildKit cache mounts (`/go/pkg/mod` and `/root/.cache/go-build`) to compile a statically linked binary with stripped debug symbols (`-ldflags="-s -w -extldflags '-static'"`).
-  - **Stage 2 (Runtime):** Uses minimal `alpine:3.20.3` containing only CA certificates, timezone definitions, and the static binary.
+* **`shipment-api` (Go 1.27):**
+  - **Stage 1 (Builder):** Uses `golang:1.27.0-alpine3.24` with BuildKit cache mounts (`/go/pkg/mod` and `/root/.cache/go-build`) to compile a statically linked binary with stripped debug symbols (`-ldflags="-s -w -extldflags '-static'"`).
+  - **Stage 2 (Runtime):** Uses minimal `alpine:3.24.1` containing only CA certificates, timezone definitions, and the static binary.
 * **`tracking-worker` (Python 3.12):**
   - **Stage 1 (Builder):** Compiles wheel dependencies in an isolated Debian build container.
   - **Stage 2 (Runtime):** Uses `python:3.12-slim-bookworm` copying only the installed package prefix.

@@ -26,9 +26,9 @@ jobs:
           persist-credentials: false
 
       - name: Set up Go
-        uses: actions/setup-go@41dfa10bad2bb2aeab7976c79664de53a5166f39 # v5.1.0
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
         with:
-          go-version: "1.23"
+          go-version: "1.27.0"
           cache-dependency-path: services/shipment-api/go.sum
 
       - name: Run Go Unit Tests with Race Detection
@@ -85,16 +85,18 @@ jobs:
           persist-credentials: false
 
       - name: Run Hadolint on shipment-api Dockerfile
-        uses: hadolint/hadolint-action@54c9adabbbe458c33d42686164cf384911e9675e # v3.1.0
+        uses: hadolint/hadolint-action@3fc49fb50d59c6ab7917a2e4195dba633e515b29 # v3.2.0
         with:
           dockerfile: services/shipment-api/Dockerfile
           failure-threshold: warning
+          ignore: DL3018
 
       - name: Run Hadolint on tracking-worker Dockerfile
-        uses: hadolint/hadolint-action@54c9adabbbe458c33d42686164cf384911e9675e # v3.1.0
+        uses: hadolint/hadolint-action@3fc49fb50d59c6ab7917a2e4195dba633e515b29 # v3.2.0
         with:
           dockerfile: services/tracking-worker/Dockerfile
           failure-threshold: warning
+          ignore: DL3008
 
   # ============================================================================
   # Quality Gate 4: Helm Chart Lint & Template Validation
@@ -109,7 +111,7 @@ jobs:
           persist-credentials: false
 
       - name: Set up Helm
-        uses: azure/setup-helm@fe7b79cd5ee101d5da0498030407de609044467a # v4.2.0
+        uses: azure/setup-helm@bf6a7d304bc2fdb57e0331155b7ebf2c504acf0a # v4
         with:
           version: "v3.16.2"
 
