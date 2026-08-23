@@ -13,6 +13,9 @@ RUN apt-get update && \
     rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt .
+# BuildKit owns this cache outside the image layer; retaining it accelerates
+# dependency downloads without shipping pip's cache in the runtime image.
+# hadolint ignore=DL3042
 RUN --mount=type=cache,target=/root/.cache/pip \
     pip install --no-warn-script-location --prefix=/install -r requirements.txt
 
