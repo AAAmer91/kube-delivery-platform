@@ -31,7 +31,7 @@ RUN --mount=type=cache,target=/go/pkg/mod \
 # ==============================================================================
 # Runtime Stage: Minimal, unprivileged non-root image (Read-only root compatible)
 # ==============================================================================
-FROM alpine:3.20.3 AS runtime
+FROM alpine:3.24.1 AS runtime
 
 # Create dedicated non-root application user and group (UID/GID 10001)
 RUN addgroup -g 10001 -S appgroup && \
