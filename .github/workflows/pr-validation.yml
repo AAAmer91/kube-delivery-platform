@@ -72,14 +72,17 @@ jobs:
         run: |
           python -m pytest services/tracking-worker/tests -v --cov=services/tracking-worker/src
 
-      - name: Run Repository Contract Tests
-        run: |
-          python -m pytest \
-            tests/contract/test_delivery_automation_contract.py \
-            tests/contract/test_digest_collection.py \
-            tests/contract/test_openapi_contract.py \
-            tests/contract/test_workflow_summaries.py \
-            -v
+      - name: Run Delivery Automation Contract Tests
+        run: python -m pytest tests/contract/test_delivery_automation_contract.py -v
+
+      - name: Run Digest Collection Contract Tests
+        run: python -m pytest tests/contract/test_digest_collection.py -v
+
+      - name: Run OpenAPI Contract Tests
+        run: python -m pytest tests/contract/test_openapi_contract.py -v
+
+      - name: Run Workflow Evidence Contract Tests
+        run: python -m pytest tests/contract/test_workflow_summaries.py -v
 
       - name: Run Integration Tests
         run: python -m pytest tests/integration -v

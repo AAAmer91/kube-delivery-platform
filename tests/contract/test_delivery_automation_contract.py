@@ -108,12 +108,15 @@ def test_python_quality_gate_reports_unit_contract_and_integration_failures_sepa
 
     assert "services/tracking-worker/tests" in commands["Run Python Unit Tests with Coverage"]
     assert "--cov=services/tracking-worker/src" in commands["Run Python Unit Tests with Coverage"]
-    repository_contracts = commands["Run Repository Contract Tests"]
-    assert "test_delivery_automation_contract.py" in repository_contracts
-    assert "test_digest_collection.py" in repository_contracts
-    assert "test_openapi_contract.py" in repository_contracts
-    assert "test_workflow_summaries.py" in repository_contracts
-    assert "test_helm_rollout_contract.py" not in repository_contracts
+    expected_contract_steps = {
+        "Run Delivery Automation Contract Tests": "test_delivery_automation_contract.py",
+        "Run Digest Collection Contract Tests": "test_digest_collection.py",
+        "Run OpenAPI Contract Tests": "test_openapi_contract.py",
+        "Run Workflow Evidence Contract Tests": "test_workflow_summaries.py",
+    }
+    for step_name, test_file in expected_contract_steps.items():
+        assert test_file in commands[step_name]
+        assert "test_helm_rollout_contract.py" not in commands[step_name]
     assert "tests/integration" in commands["Run Integration Tests"]
 
     helm_steps = validation["jobs"]["lint-helm-chart"]["steps"]
