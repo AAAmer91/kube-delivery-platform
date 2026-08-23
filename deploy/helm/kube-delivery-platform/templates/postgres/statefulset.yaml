@@ -21,9 +21,9 @@ spec:
     spec:
       securityContext:
         runAsNonRoot: true
-        runAsUser: 999 # Standard postgres UID in alpine
-        runAsGroup: 999
-        fsGroup: 999
+        runAsUser: 70 # Standard postgres UID/GID in the Alpine image
+        runAsGroup: 70
+        fsGroup: 70
         seccompProfile:
           type: RuntimeDefault
       containers:
@@ -34,7 +34,7 @@ spec:
             allowPrivilegeEscalation: false
             readOnlyRootFilesystem: false
             runAsNonRoot: true
-            runAsUser: 999
+            runAsUser: 70
             capabilities:
               drop:
                 - ALL
