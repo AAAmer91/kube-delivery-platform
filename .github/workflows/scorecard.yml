@@ -13,6 +13,7 @@ jobs:
   analysis:
     name: "OpenSSF Scorecard Analysis"
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     permissions:
       contents: read
       security-events: write
@@ -35,9 +36,43 @@ jobs:
         with:
           name: openssf-scorecard-sarif
           path: results.sarif
+          if-no-files-found: error
           retention-days: 5
 
       - name: Upload results to code scanning
         uses: github/codeql-action/upload-sarif@f205ea1c3313d32999d8d6a48b4f6530d4437b38 # v4.37.4
         with:
           sarif_file: results.sarif
+
+  summary:
+    name: "Publish Human-Readable Scorecard Summary"
+    needs: analysis
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      actions: read
+      contents: read
+    steps:
+      - name: Checkout summary renderer
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Download Scorecard SARIF
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: openssf-scorecard-sarif
+          path: scorecard-results
+
+      - name: Render Scorecard job summary
+        env:
+          COMMIT_SHA: ${{ github.sha }}
+          REPOSITORY: ${{ github.repository }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          python scripts/render_scorecard_summary.py \
+            --input scorecard-results/results.sarif \
+            --output "${GITHUB_STEP_SUMMARY}" \
+            --repository "${REPOSITORY}" \
+            --commit-sha "${COMMIT_SHA}" \
+            --run-url "${RUN_URL}"

@@ -19,7 +19,7 @@ concurrency:
 
 jobs:
   build-and-scan:
-    name: "Multi-Arch Build, Trivy Scan, and GHCR Publish"
+    name: "Build, scan, and publish / ${{ matrix.service.name }}"
     runs-on: ubuntu-latest
     env:
       IMAGE_NAME: ghcr.io/aaamer91/${{ matrix.service.name }}
@@ -115,3 +115,50 @@ jobs:
           name: ${{ matrix.service.name }}-sbom
           path: ${{ matrix.service.name }}.sbom.cdx.json
           if-no-files-found: error
+
+      - name: Publish immutable image coordinates
+        env:
+          DIGEST: ${{ steps.build.outputs.digest }}
+          SERVICE_NAME: ${{ matrix.service.name }}
+          SOURCE_SHA: ${{ github.sha }}
+        run: |
+          digest_pattern='^sha256:[a-f0-9]{64}$'
+          if [[ ! "${DIGEST}" =~ ${digest_pattern} ]]; then
+            echo "::error title=Invalid image digest::Buildx did not return a valid OCI digest."
+            exit 1
+          fi
+
+          case "${SERVICE_NAME}" in
+            shipment-api) promotion_input="shipment_api_digest" ;;
+            tracking-worker) promotion_input="tracking_worker_digest" ;;
+            *)
+              echo "::error title=Unknown service::No GitOps input mapping exists for ${SERVICE_NAME}."
+              exit 1
+              ;;
+          esac
+
+          short_sha="${SOURCE_SHA:0:7}"
+          immutable_ref="${IMAGE_NAME}@${DIGEST}"
+          commit_url="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/commit/${SOURCE_SHA}"
+
+          {
+            echo "# Published image: ${SERVICE_NAME}"
+            echo
+            echo "The vulnerability scan, SBOM generation, and provenance attestations completed before these coordinates were published."
+            echo
+            echo "| Coordinate | Value |"
+            echo "| --- | --- |"
+            printf '| Service | `%s` |\n' "${SERVICE_NAME}"
+            printf '| Source commit | [`%s`](%s) |\n' "${SOURCE_SHA}" "${commit_url}"
+            printf '| Source tag | `sha-%s` |\n' "${short_sha}"
+            printf '| OCI manifest digest | `%s` |\n' "${DIGEST}"
+            printf '| Immutable image | `%s` |\n' "${immutable_ref}"
+            echo
+            echo "## GitOps promotion input"
+            echo
+            echo '```text'
+            printf '%s=%s\n' "${promotion_input}" "${DIGEST}"
+            echo '```'
+            echo
+            echo "> Use the OCI manifest digest—not the commit SHA or source tag—when running the GitOps promotion workflow."
+          } >> "${GITHUB_STEP_SUMMARY}"

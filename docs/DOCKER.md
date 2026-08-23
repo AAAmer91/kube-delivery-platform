@@ -1,48 +1,63 @@
-# 🐳 Docker Architecture & Container Hardening Guide
+# Docker Design
 
-The **Kube Delivery Platform** implements enterprise-grade container engineering designed for zero-trust Kubernetes execution.
+Docker provides the packaging boundary for the two application services. The image definitions aim to keep build tooling out of runtime images and to support the restricted security context used by the Helm chart.
 
----
+## Image construction
 
-## 🔒 Security Best Practices Implemented
+### `shipment-api`
 
-### 1. Multi-Stage Builds & Minimal Runtime Images
-* **`shipment-api` (Go 1.27):**
-  - **Stage 1 (Builder):** Uses `golang:1.27.0-alpine3.24` with BuildKit cache mounts (`/go/pkg/mod` and `/root/.cache/go-build`) to compile a statically linked binary with stripped debug symbols (`-ldflags="-s -w -extldflags '-static'"`).
-  - **Stage 2 (Runtime):** Uses minimal `alpine:3.24.1` containing only CA certificates, timezone definitions, and the static binary.
-* **`tracking-worker` (Python 3.12):**
-  - **Stage 1 (Builder):** Compiles wheel dependencies in an isolated Debian build container.
-  - **Stage 2 (Runtime):** Uses `python:3.12-slim-bookworm` copying only the installed package prefix.
+The Go service uses a multi-stage build:
 
-### 2. Non-Root Execution (UID/GID 10001)
-* Neither service runs as `root` (UID 0).
-* Dedicated unprivileged user `appuser:appgroup` (UID `10001`, GID `10001`) is created and declared via `USER 10001:10001`.
+1. `golang:1.27.0-alpine3.24` downloads modules and compiles a statically linked binary. BuildKit cache mounts retain the module and compiler caches between builds.
+2. `alpine:3.24.1` supplies CA certificates, timezone data, and the compiled binary for runtime.
 
-### 3. Read-Only Root Filesystem Compatibility
-* All container runtimes support `readOnlyRootFilesystem: true`.
-* Temporary writable scratch space is provided via `tmpfs` mounts at `/tmp`.
+The linker flags strip debug symbols and remove the dependency on a runtime C library. This reduces the image contents, although debugging production binaries may require retaining symbols in a separate artifact.
 
-### 4. Dropped Linux Capabilities & Seccomp
-* Default Linux capabilities are completely dropped (`drop: ["ALL"]`).
-* Default runtime seccomp profile is enforced (`seccompProfile: { type: "RuntimeDefault" }`).
+### `tracking-worker`
 
-### 5. Multi-Architecture Matrix (`linux/amd64`, `linux/arm64`)
-* Built using `docker/setup-buildx-action` and QEMU emulation for universal cloud and Apple Silicon compatibility.
+The Python service builds dependencies in a Debian-based builder and copies the installed package prefix into `python:3.12-slim-bookworm`. Compilers and package build tools therefore do not remain in the final image.
 
----
+## Runtime identity and filesystem
 
-## 📦 OCI Image Metadata & Supply Chain Security
+Both images declare the unprivileged identity `10001:10001`. The Kubernetes configuration also enforces:
 
-All container images include OpenContainers Initiative (OCI) standard labels:
-```dockerfile
-LABEL org.opencontainers.image.title="shipment-api" \
-      org.opencontainers.image.description="Cloud-Native REST API for shipment management and NATS JetStream event publishing" \
-      org.opencontainers.image.authors="Ahmed A. Amer" \
-      org.opencontainers.image.vendor="Kube Delivery Platform" \
-      org.opencontainers.image.licenses="MIT" \
-      org.opencontainers.image.source="https://github.com/AAAmer91/kube-delivery-platform"
+- `runAsNonRoot: true`
+- `readOnlyRootFilesystem: true`
+- all Linux capabilities dropped
+- the runtime-default seccomp profile
+
+Temporary files are written to an explicit `/tmp` volume. These controls need enforcement at deployment time; a Dockerfile declaration alone cannot prevent an operator from overriding them.
+
+## Build targets and metadata
+
+The image workflow uses Docker Buildx and QEMU to produce `linux/amd64` and `linux/arm64` images. OCI labels record the source repository, license, revision, and image description so a published artifact can be traced back to its build.
+
+## Supply-chain outputs
+
+The GitHub workflows:
+
+- scan images with Trivy and fail on configured critical findings;
+- generate a CycloneDX software bill of materials (SBOM);
+- attach GitHub build provenance;
+- sign published image digests with keyless Cosign signing.
+
+After those controls complete, each matrix job writes an image-coordinate table to the GitHub Actions run summary. It distinguishes the source commit from the OCI manifest digest, shows the immutable `repository@sha256:...` reference, and provides the exact input name expected by the GitOps promotion workflow.
+
+These outputs improve traceability but do not replace dependency review, base-image maintenance, or runtime monitoring.
+
+## Local inspection
+
+Build the services through Compose:
+
+```bash
+docker compose -f deploy/compose/docker-compose.yml build
 ```
 
-### Vulnerability Scanning & SBOM Generation
-* **Trivy Scanner:** Automated container vulnerability scanning in GitHub Actions with `CRITICAL: 0` blocking gates.
-* **CycloneDX SBOM:** Software Bill of Materials generated for full dependency transparency.
+Inspect the configured runtime user and labels:
+
+```bash
+docker image inspect kube-delivery-platform-shipment-api \
+  --format '{{json .Config.User}} {{json .Config.Labels}}'
+```
+
+Image names can differ when a Compose project name is supplied. The CI image workflow is the authoritative path for multi-architecture publishing and attestations.

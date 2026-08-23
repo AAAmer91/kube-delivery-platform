@@ -2,7 +2,7 @@
 
 ## Supported versions
 
-Security fixes are applied to the latest release and the `main` branch.
+This proof of concept does not maintain parallel release lines. Security fixes are applied to the latest release and the `main` branch.
 
 ## Reporting a vulnerability
 

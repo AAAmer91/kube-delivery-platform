@@ -1,133 +1,110 @@
-# 🚀 Kube Delivery Platform
+# Kube Delivery Platform
 
-[![CI/CD Quality Gates](https://github.com/AAAmer91/kube-delivery-platform/actions/workflows/pr-validation.yml/badge.svg)](https://github.com/AAAmer91/kube-delivery-platform/actions/workflows/pr-validation.yml)
-[![Kind Runtime & Chaos](https://github.com/AAAmer91/kube-delivery-platform/actions/workflows/e2e-kind.yml/badge.svg)](https://github.com/AAAmer91/kube-delivery-platform/actions/workflows/e2e-kind.yml)
-[![Security SAST](https://github.com/AAAmer91/kube-delivery-platform/actions/workflows/security-scans.yml/badge.svg)](https://github.com/AAAmer91/kube-delivery-platform/actions/workflows/security-scans.yml)
-[![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/AAAmer91/kube-delivery-platform/badge)](https://scorecard.dev/viewer/?uri=github.com/AAAmer91/kube-delivery-platform)
-[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![CI](https://github.com/AAAmer91/kube-delivery-platform/actions/workflows/ci.yml/badge.svg)](https://github.com/AAAmer91/kube-delivery-platform/actions/workflows/ci.yml)
+[![Security](https://github.com/AAAmer91/kube-delivery-platform/actions/workflows/security.yml/badge.svg)](https://github.com/AAAmer91/kube-delivery-platform/actions/workflows/security.yml)
+[![OpenSSF Scorecard](https://api.securityscorecards.dev/projects/github.com/AAAmer91/kube-delivery-platform/badge)](https://securityscorecards.dev/viewer/?uri=github.com/AAAmer91/kube-delivery-platform)
 
-An enterprise-grade, cloud-native delivery platform engineered to demonstrate advanced **Docker container hardening**, **Kubernetes platform engineering**, **Argo CD GitOps**, and **Argo Rollouts progressive canary delivery**.
+Kube Delivery Platform is a proof of concept for an internal Kubernetes delivery platform. It models how a small application can move from source code to a controlled runtime using container images, Helm, policy checks, GitOps promotion, and progressive delivery.
 
----
+The repository is intentionally self-contained so that the delivery model can be evaluated without depending on an existing company platform. It is not a hosted product. A production adoption would still need organization-specific identity, secret management, managed data services, capacity planning, backup and disaster-recovery policies.
 
-## 🏗️ Platform Architecture
+## Start here
+
+If Docker, Kubernetes, or GitOps is new to you, read the [beginner guide](docs/BEGINNER_GUIDE.md) first.
+
+At a high level:
+
+1. A client submits a shipment to the API.
+2. The API stores the shipment in PostgreSQL and publishes an event to NATS.
+3. A worker consumes the event and updates the shipment status.
+4. Docker packages both services, while Helm describes how they run on Kubernetes.
+5. Argo CD reconciles the declared environment configuration with a cluster.
+
+## Architecture
 
 ```mermaid
-flowchart TD
-    subgraph ClientLayer ["🌐 Ingress Edge"]
-        Client(["HTTP Client / Webhook"])
-        Ingress["Ingress NGINX Controller<br/>(Port 80/443 | SSL Termination)"]
-    end
+flowchart LR
+    Client --> API[Shipment API]
+    API --> DB[(PostgreSQL)]
+    API --> NATS[(NATS JetStream)]
+    NATS --> Worker[Tracking Worker]
+    Worker --> DB
 
-    subgraph ClusterMesh ["📦 Kubernetes Cluster (Namespace: delivery)"]
-        subgraph Compute ["Compute Workloads"]
-            API["shipment-api (Go 1.27)<br/>2 Replicas | HPA (70%) | Non-Root (UID 10001)<br/>Read-Only RootFS | PDB (minAvailable: 1)"]
-            Worker["tracking-worker (Python 3.12)<br/>2 Replicas | HPA (75%) | Non-Root (UID 10001)<br/>Async Lifecycle Engine"]
-        end
-
-        subgraph EventBus ["Event Streaming Mesh"]
-            NATS["NATS JetStream 2.10<br/>Stream: DELIVERY_EVENTS<br/>Subject: delivery.shipments.>"]
-        end
-
-        subgraph Persistence ["Stateful Tier"]
-            DB[("PostgreSQL 16<br/>StatefulSet + PVC<br/>Pre/Post-Install Migration Job")]
-        end
-
-        subgraph Observability ["Telemetry Tier"]
-            Prom["Prometheus Server<br/>RED Scrape Targets"]
-            Grafana["Grafana Dashboards<br/>Executive KPI View"]
-        end
-    end
-
-    Client -->|"POST /api/v1/shipments"| Ingress
-    Ingress -->|"HTTP Proxy"| API
-    API -->|"1. Publish Event"| NATS
-    API -->|"Persist Order (PLACED)"| DB
-    NATS -->|"2. JetStream Consumer Group"| Worker
-    Worker -->|"3. Simulate Progress (DELIVERED)"| DB
-    Prom -->|"Scrape /metrics"| API
-    Prom -->|"Scrape /metrics"| Worker
-    Grafana -->|"Query Metrics"| Prom
+    Git[Environment configuration] --> Argo[Argo CD]
+    Argo --> K8s[Kubernetes]
+    K8s --> API
+    K8s --> Worker
+    K8s --> DB
+    K8s --> NATS
 ```
 
----
+## Engineering scope
 
-## 🌟 Key Engineering Capabilities
+| Area | Current implementation |
+| --- | --- |
+| Containers | Multi-stage, non-root images built with Docker Buildx |
+| Kubernetes | Helm chart with probes, resource controls, autoscaling, disruption budgets, and network policies |
+| Policy | Kyverno rules for image, privilege, and resource requirements |
+| GitOps | Argo CD applications for staging and production configuration |
+| Progressive delivery | Argo Rollouts canary steps with metric-based analysis templates |
+| Observability | Prometheus metrics and Grafana dashboard definitions |
+| Verification | Unit, contract, integration, resilience, manifest, and security checks |
+| Supply chain | Vulnerability scanning, SBOM generation, image signing, and provenance attestations |
 
-| Engineering Domain | Highlights & Capabilities |
-| :--- | :--- |
-| **🐳 Docker Engineering** | Multi-stage builds, minimal non-root base images (`UID 10001`), BuildKit cache mounts, read-only root filesystems, explicit health checks, Hadolint linting, blocking Trivy CVE scans, CycloneDX SBOMs, signed provenance/SBOM attestations, and multi-arch images (`linux/amd64`, `linux/arm64`). |
-| **☸️ Kubernetes Platform** | Umbrella Helm chart (`values-preview.yaml`, `values-staging.yaml`, `values-prod.yaml`), zero-trust `NetworkPolicy` (default-deny), `HorizontalPodAutoscaler` (HPA), `PodDisruptionBudget` (PDB), `TopologySpreadConstraints`, Pod Anti-Affinity, least-privilege RBAC. |
-| **🛡️ Kyverno Governance** | Scoped policy-as-code admission: disallows root users, mandates CPU/memory limits, enforces read-only rootfs for application workloads, drops ALL capabilities, restricts image registries, and proves denial in KinD. |
-| **🚀 GitOps & Progressive Delivery** | Argo CD App-of-Apps bootstraps observability and governance before environments; Argo Rollouts drives NGINX-weighted canary steps (`10% -> 25% -> 50% -> 100%`) with Prometheus analysis gates. |
-| **📊 Observability & RED Metrics** | Prometheus metric scraping, alert rules for error spikes and consumer lag, OpenTelemetry collector, Grafana dashboard as code visualizing RED metrics (Rate, Errors, Duration). |
-| **🧪 Runtime Evidence** | Live shipment lifecycle test, Helm test hook, pod-deletion self-healing drill, real unauthorized TCP NetworkPolicy denial, and server-side Argo CD CRD validation in an ephemeral three-node KinD cluster. |
-
----
-
-## 📂 Repository Structure
+## Repository layout
 
 ```text
-├── services/
-│   ├── shipment-api/                  # Go 1.27 REST API Service
-│   └── tracking-worker/               # Python 3.12 Event Processor Service
-├── deploy/
-│   ├── compose/                       # Local Dev Docker Compose & DB Schema
-│   ├── helm/kube-delivery-platform/   # Production-Grade Umbrella Helm Chart
-│   ├── argocd/                        # Argo CD App-of-Apps & Environment Applications
-│   ├── argo-rollouts/                 # Progressive Delivery Rollouts & AnalysisTemplates
-│   ├── policies/                      # Kyverno Governance ClusterPolicies
-│   └── kind/                          # Multi-Node Kind Cluster Topology
-├── observability/
-│   ├── prometheus/                    # Alert rules and scrape configs
-│   ├── grafana/                       # Dashboards as code (RED Metrics & Pod Health)
-│   └── otel/                          # OpenTelemetry collector config
-├── tests/
-│   ├── contract/                      # OpenAPI & CloudEvent schema tests
-│   ├── integration/                   # Idempotency and database tests
-│   ├── e2e/                           # End-to-end shipment lifecycle tests
-│   └── resilience/                    # Chaos drills (pod recovery, network isolation)
-├── scripts/                           # Traffic generation, schema validation, summary tools
-├── docs/                              # In-depth architectural documentation
-├── Makefile
-└── README.md
+services/                    Application source and tests
+deploy/helm/                 Kubernetes package and environment values
+deploy/argocd/               Argo CD application definitions
+deploy/policies/             Kyverno admission policies
+deploy/argo-rollouts/        Shared rollout analysis resources
+observability/               Prometheus, Grafana, and OpenTelemetry configuration
+scripts/                     Validation and operational helpers
+docs/                        Design and operating documentation
+.github/workflows/           Continuous integration and delivery workflows
 ```
 
----
+## Local development
 
-## 🚦 Quickstart & Local Verification
+Prerequisites:
 
-### 1. Run Unit & Contract Tests
-```bash
-make test
-```
+- Docker with Compose v2
+- GNU Make
+- Go 1.27 or later for running `shipment-api` and its tests outside containers
 
-### 2. Validate Kubernetes & Policy Manifests
-```bash
-make verify-manifests
-```
+Start the application dependencies and services:
 
-For Kubernetes deployment, provision a `kube-delivery-database` Secret containing
-`POSTGRES_PASSWORD` and `DATABASE_URL`. CI generates an ephemeral Secret; staging
-and production are designed for an external secret manager.
-
-### 3. Start Local Docker Compose Stack
 ```bash
 make compose-up
 ```
 
----
+Run the test suites and static checks:
 
-## 📚 In-Depth Technical Documentation
+```bash
+make test
+make lint
+make verify-manifests
+```
 
-* [📖 Docker Architecture & Hardening Guide](docs/DOCKER.md)
-* [☸️ Kubernetes Platform Architecture](docs/KUBERNETES.md)
-* [🚀 GitOps & Progressive Delivery with Argo](docs/GITOPS.md)
-* [🛡️ Platform Security & Threat Model](docs/SECURITY.md)
-* [📖 Platform Operations & Incident Runbook](docs/RUNBOOK.md)
-* [⚙️ Required GitHub Repository Settings](docs/GITHUB_SETUP.md)
+Stop the local environment:
 
----
+```bash
+make compose-down
+```
 
-## 📄 License
-This project is licensed under the [MIT License](LICENSE).
+The Helm chart expects `POSTGRES_PASSWORD` and `DATABASE_URL` to be supplied through a Kubernetes Secret. See [Kubernetes deployment](docs/KUBERNETES.md) before installing it in a cluster.
+
+## Documentation
+
+- [Beginner guide](docs/BEGINNER_GUIDE.md) — concepts, request flow, and a suggested reading path
+- [Docker design](docs/DOCKER.md) — image construction and runtime controls
+- [Kubernetes deployment](docs/KUBERNETES.md) — chart structure, workloads, and policies
+- [GitOps and rollout model](docs/GITOPS.md) — reconciliation, promotion, and canary analysis
+- [Security model](docs/SECURITY.md) — trust boundaries and layered controls
+- [Operations runbook](docs/RUNBOOK.md) — incident checks and recovery actions
+- [GitHub setup](docs/GITHUB_SETUP.md) — repository settings required by the workflows
+
+## License
+
+This project is licensed under the MIT License. See [LICENSE](LICENSE).

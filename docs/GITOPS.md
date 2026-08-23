@@ -1,56 +1,62 @@
-# 🚀 GitOps & Progressive Delivery with Argo CD & Argo Rollouts
+# GitOps and Progressive Delivery
 
-The platform follows **declarative GitOps principles**: Git is the single source of truth for all cluster desired state. Direct ad-hoc production mutations are prohibited.
+This proof of concept uses Git as the reviewed record of desired cluster state. Argo CD compares that state with the cluster and applies the configured reconciliation policy. Operational access still needs a documented break-glass procedure for incidents in a production implementation.
 
----
-
-## 🏗️ GitOps Architecture: App-of-Apps Pattern
+## Reconciliation model
 
 ```mermaid
 graph TD
-    Root["Root Application<br/>(deploy/argocd/root-app.yaml)"]
-    Root --> Controllers["Platform Controllers<br/>ingress-nginx, Argo Rollouts, Kyverno<br/>Sync wave -4"]
-    Root --> Observe["Observability App<br/>kube-prometheus-stack 88.5.3<br/>Sync wave -2"]
-    Root --> Govern["Governance App<br/>Kyverno policies<br/>Sync wave -1"]
-    Root --> Staging["Staging App<br/>(values-staging.yaml)<br/>Automated Sync & Prune"]
-    Root --> Prod["Production App<br/>(values-prod.yaml)<br/>Protected / Manual Promotion"]
+    Root[Root application] --> Controllers[Ingress, Argo Rollouts, and Kyverno]
+    Root --> Observe[Prometheus and Grafana]
+    Root --> Govern[Kyverno policies]
+    Root --> Staging[Staging application]
+    Root --> Production[Production application]
 ```
 
-Argo CD itself is the only bootstrap prerequisite. Once `root-app.yaml` is applied, the
-App-of-Apps installs pinned ingress-nginx, Argo Rollouts, and Kyverno controllers before
-observability, governance policies, and application environments.
+Argo CD is the bootstrap prerequisite. Applying `deploy/argocd/root-app.yaml` creates the app-of-apps hierarchy. Sync waves place controllers before the resources that depend on them:
 
----
+- platform controllers use sync wave `-4`;
+- observability uses `-2`;
+- governance uses `-1`;
+- application environments follow those dependencies.
 
-## 🎯 Argo Rollouts Canary Strategy for `shipment-api`
+The staging application enables automated sync and pruning. Production sync is manual so that repository environment protection and an operator approval can control promotion.
 
-In staging and production, `shipment-api` is managed by an **Argo Rollout** rather than a standard Deployment. Argo Rollouts controls an NGINX canary ingress so the configured weights represent traffic, not merely replica ratios.
+## Canary rollout
 
-### Canary Traffic Progression
-1. **Step 1:** Route `10%` traffic to Canary $\to$ Pause 30s + Run Prometheus Analysis.
-2. **Step 2:** Route `25%` traffic to Canary $\to$ Pause 30s + Run Prometheus Analysis.
-3. **Step 3:** Route `50%` traffic to Canary $\to$ Pause 30s + Run Prometheus Analysis.
-4. **Step 4:** Route `100%` traffic to Canary $\to$ Promote to Stable.
+For staging and production, Helm renders `shipment-api` as an Argo Rollout. NGINX canary ingress resources route traffic between stable and candidate ReplicaSets.
 
-### Automated Metric Analysis Gate (`AnalysisTemplate`)
-The rollout continuously queries Prometheus during each step:
-* **HTTP 5xx Error Rate:** Must remain $\le 1\%$.
-* **p99 Latency:** Must remain $\le 500\text{ms}$.
+The configured sequence is:
 
-If an unhandled exception or latency spike occurs during the canary window, **Argo Rollouts automatically aborts the rollout and restores 100% traffic to the stable replica set with zero user downtime**.
+1. route 10% of traffic to the candidate, pause, and analyze;
+2. route 25%, pause, and analyze;
+3. route 50%, pause, and analyze;
+4. route 100% and complete the promotion.
 
----
+At each analysis step, Prometheus queries check that:
 
-## 🛠️ CLI Rollout Commands
+- the HTTP 5xx ratio is at most 1%;
+- p99 request latency is at most 500 ms.
+
+Three failed measurements cause the rollout to abort. Argo Rollouts then returns traffic to the stable ReplicaSet. Availability still depends on ingress health, capacity, application compatibility, and the metrics pipeline, so the mechanism should be tested under the conditions of the target cluster.
+
+## Image promotion
+
+Application images are referenced by immutable digest in environment values. The promotion workflow updates those values through a pull request, which keeps the proposed artifact change reviewable and auditable.
+
+## Operator commands
+
+Set the namespace and release-specific rollout name before using these commands:
 
 ```bash
-# View live rollout progression
 kubectl argo rollouts get rollout kube-delivery-shipment-api -n delivery
-
-# Manually promote canary step
 kubectl argo rollouts promote kube-delivery-shipment-api -n delivery
-
-# Abort and rollback immediately
 kubectl argo rollouts abort kube-delivery-shipment-api -n delivery
 kubectl argo rollouts undo kube-delivery-shipment-api -n delivery
 ```
+
+Use `promote` only after reviewing the current analysis results. `abort` stops the active update; `undo` changes the desired revision and should be reconciled with Git afterward.
+
+## Limitations
+
+The repository defines the applications and rollout policy but does not provision a shared Argo CD control plane, DNS, certificates, or a managed Prometheus service. Those are platform-level concerns for the target environment.
