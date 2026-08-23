@@ -1,7 +1,7 @@
 # ==============================================================================
 # Build Stage: Multi-stage Go static binary builder with BuildKit cache mounts
 # ==============================================================================
-FROM --platform=$BUILDPLATFORM golang:1.23-alpine3.20 AS builder
+FROM --platform=$BUILDPLATFORM golang:1.24-alpine3.20 AS builder
 
 # Install build dependencies
 RUN apk add --no-cache git ca-certificates tzdata
