@@ -74,17 +74,44 @@ jobs:
             --namespace delivery-preview \
             --from-literal=POSTGRES_PASSWORD="${DATABASE_PASSWORD}" \
             --from-literal=DATABASE_URL="postgres://postgres:${DATABASE_PASSWORD}@kube-delivery-postgres:5432/delivery_db?sslmode=disable"
+          set +e
           helm upgrade --install kube-delivery ./deploy/helm/kube-delivery-platform \
             --namespace delivery-preview \
-            --atomic \
             --wait \
-            --timeout 5m \
+            --timeout 3m \
             --values ./deploy/helm/kube-delivery-platform/values.yaml \
             --values ./deploy/helm/kube-delivery-platform/values-preview.yaml \
             --set shipmentApi.image.repository=ghcr.io/aaamer91/shipment-api \
             --set shipmentApi.image.tag=test \
             --set trackingWorker.image.repository=ghcr.io/aaamer91/tracking-worker \
             --set trackingWorker.image.tag=test
+          HELM_EXIT=$?
+          set -e
+
+          if [[ "${HELM_EXIT}" -ne 0 ]]; then
+            echo "::group::Helm failure diagnostics"
+            helm status kube-delivery --namespace delivery-preview || true
+            kubectl get pods,pvc,services,deployments,statefulsets,jobs \
+              --namespace delivery-preview -o wide || true
+            kubectl get events --namespace delivery-preview \
+              --sort-by=.lastTimestamp || true
+            for pod in $(kubectl get pods --namespace delivery-preview -o name 2>/dev/null); do
+              pod_name="${pod#pod/}"
+              phase=$(kubectl get "${pod}" --namespace delivery-preview -o jsonpath='{.status.phase}' 2>/dev/null || true)
+              waiting=$(kubectl get "${pod}" --namespace delivery-preview -o jsonpath='{range .status.containerStatuses[*]}{.name}:{.state.waiting.reason}:{.state.terminated.reason}{";"}{end}' 2>/dev/null || true)
+              echo "::error title=Preview pod ${pod_name}::phase=${phase}; containers=${waiting}"
+              kubectl describe "${pod}" --namespace delivery-preview || true
+              kubectl logs "${pod}" --namespace delivery-preview --all-containers --tail=100 || true
+            done
+            for claim in $(kubectl get pvc --namespace delivery-preview -o name 2>/dev/null); do
+              claim_name="${claim#persistentvolumeclaim/}"
+              claim_phase=$(kubectl get "${claim}" --namespace delivery-preview -o jsonpath='{.status.phase}' 2>/dev/null || true)
+              echo "::error title=Preview PVC ${claim_name}::phase=${claim_phase}"
+            done
+            echo "::endgroup::"
+            helm uninstall kube-delivery --namespace delivery-preview || true
+            exit "${HELM_EXIT}"
+          fi
 
       - name: Validate Argo CD Applications Against Installed CRDs
         run: |
