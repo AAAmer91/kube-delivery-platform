@@ -200,7 +200,7 @@ nats:
   enabled: true
   image:
     repository: nats
-    tag: "2.10-alpine"
+    tag: "2.12"
     pullPolicy: IfNotPresent
   jetstream:
     enabled: true
