@@ -1,7 +1,8 @@
 # Kube Delivery Platform
 
-[![CI](https://github.com/AAAmer91/kube-delivery-platform/actions/workflows/ci.yml/badge.svg)](https://github.com/AAAmer91/kube-delivery-platform/actions/workflows/ci.yml)
-[![Security](https://github.com/AAAmer91/kube-delivery-platform/actions/workflows/security.yml/badge.svg)](https://github.com/AAAmer91/kube-delivery-platform/actions/workflows/security.yml)
+[![Build & Publish](https://github.com/AAAmer91/kube-delivery-platform/actions/workflows/build-and-publish.yml/badge.svg?branch=main)](https://github.com/AAAmer91/kube-delivery-platform/actions/workflows/build-and-publish.yml)
+[![Kind E2E & Chaos](https://github.com/AAAmer91/kube-delivery-platform/actions/workflows/e2e-kind.yml/badge.svg?branch=main)](https://github.com/AAAmer91/kube-delivery-platform/actions/workflows/e2e-kind.yml)
+[![Security & CodeQL](https://github.com/AAAmer91/kube-delivery-platform/actions/workflows/security-scans.yml/badge.svg?branch=main)](https://github.com/AAAmer91/kube-delivery-platform/actions/workflows/security-scans.yml)
 [![OpenSSF Scorecard](https://api.securityscorecards.dev/projects/github.com/AAAmer91/kube-delivery-platform/badge)](https://securityscorecards.dev/viewer/?uri=github.com/AAAmer91/kube-delivery-platform)
 
 Kube Delivery Platform is a proof of concept for an internal Kubernetes delivery platform. It models how a small application can move from source code to a controlled runtime using container images, Helm, policy checks, GitOps promotion, and progressive delivery.
